@@ -1,0 +1,25 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+index 610d303..90492e0 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+@@ -147,6 +147,20 @@ open class ExpoNotificationBuilder(
+       )
+     )
+ 
++    if (notificationContent.categoryId == "alarm") {
++      val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
++      if (intent != null) {
++        val fullScreenIntent = android.app.PendingIntent.getActivity(
++          context,
++          0,
++          intent,
++          android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
++        )
++        builder.setFullScreenIntent(fullScreenIntent, true)
++        builder.setCategory(androidx.core.app.NotificationCompat.CATEGORY_ALARM)
++      }
++    }
++
+     if (notificationContent.containsImage()) {
+       val bitmap = notificationContent.getImage(context)
+       bitmap?.let { builder.setLargeIcon(it) }

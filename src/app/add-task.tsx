@@ -30,22 +30,21 @@ type Priority = 'high' | 'medium' | 'low';
 type RepeatType = 'once' | 'daily';
 
 const categories: { id: Category; label: string }[] = [
-  { id: 'health', label: '💊 Health' },
-  { id: 'work', label: '💼 Work' },
-  { id: 'shopping', label: '🛒 Shopping' },
-  { id: 'personal', label: '🏠 Personal' },
-  { id: 'habits', label: '⭐ Habits' },
-  { id: 'future', label: '📅 Future' },
+  { id: 'health', label: 'Health' },
+  { id: 'work', label: 'Work' },
+  { id: 'shopping', label: 'Shopping' },
+  { id: 'personal', label: 'Personal' },
+  { id: 'habits', label: 'Habits' },
+  { id: 'future', label: 'Future' },
 ];
 
 const priorities: {
   id: Priority;
   label: string;
-  color: string;
 }[] = [
-  { id: 'high', label: '🔴 High', color: '#B42318' },
-  { id: 'medium', label: '🟡 Medium', color: '#855900' },
-  { id: 'low', label: '🟢 Low', color: '#237A38' },
+  { id: 'high', label: 'High' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'low', label: 'Low' },
 ];
 
 const repeatOptions: { id: RepeatType; label: string }[] = [
@@ -106,11 +105,19 @@ export default function AddTaskScreen() {
         await setTaskNotificationId(task.id, notificationId);
       }
 
+      let message = '';
+      if (!notificationsSupported) {
+        message = 'Saved. Alarms only work in the installed app, not Expo Go.';
+      } else if (notificationId) {
+        const timeStr = reminderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        message = `Saved. Alarm at ${timeStr}.`;
+      } else {
+        message = 'Saved, but alarms are off. Enable notifications and alarms for this app in Android settings.';
+      }
+
       Alert.alert(
         'Task saved',
-        notificationsSupported
-          ? 'Your task has been saved and a reminder was scheduled.'
-          : 'Your task has been saved. Reminders work after you install the APK, not in Expo Go.',
+        message,
         [
           {
             text: 'OK',
@@ -170,15 +177,12 @@ export default function AddTaskScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.screenTitle}>➕ Add New Task</Text>
-
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Task Title *</Text>
-
+        <Text style={styles.label}>Title</Text>
         <TextInput
           style={styles.input}
-          placeholder="Example: Take medicine"
-          placeholderTextColor="#777"
+          placeholder="e.g. Call dentist"
+          placeholderTextColor="#A0AEC0"
           value={title}
           onChangeText={setTitle}
           maxLength={60}
@@ -187,11 +191,10 @@ export default function AddTaskScreen() {
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Description</Text>
-
         <TextInput
           style={[styles.input, styles.textArea]}
           placeholder="Add details if needed..."
-          placeholderTextColor="#777"
+          placeholderTextColor="#A0AEC0"
           value={description}
           onChangeText={setDescription}
           multiline
@@ -201,7 +204,6 @@ export default function AddTaskScreen() {
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Category</Text>
-
         <View style={styles.optionGrid}>
           {categories.map(cat => (
             <TouchableOpacity
@@ -227,24 +229,22 @@ export default function AddTaskScreen() {
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Priority</Text>
-
-        <View style={styles.row}>
-          {priorities.map(p => (
+        <View style={styles.segmentedControl}>
+          {priorities.map((p, i) => (
             <TouchableOpacity
               key={p.id}
               style={[
-                styles.priorityButton,
-                priority === p.id && {
-                  backgroundColor: p.color,
-                  borderColor: p.color,
-                },
+                styles.segmentButton,
+                priority === p.id && styles.selectedSegmentButton,
+                i === 0 && { borderTopLeftRadius: 10, borderBottomLeftRadius: 10 },
+                i === priorities.length - 1 && { borderTopRightRadius: 10, borderBottomRightRadius: 10, borderRightWidth: 1 },
               ]}
               onPress={() => setPriority(p.id)}
             >
               <Text
                 style={[
-                  styles.priorityText,
-                  priority === p.id && styles.selectedOptionText,
+                  styles.segmentText,
+                  priority === p.id && styles.selectedSegmentText,
                 ]}
               >
                 {p.label}
@@ -256,21 +256,22 @@ export default function AddTaskScreen() {
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Repeat</Text>
-
-        <View style={styles.row}>
-          {repeatOptions.map(option => (
+        <View style={styles.segmentedControl}>
+          {repeatOptions.map((option, i) => (
             <TouchableOpacity
               key={option.id}
               style={[
-                styles.repeatButton,
-                repeatType === option.id && styles.selectedOption,
+                styles.segmentButton,
+                repeatType === option.id && styles.selectedSegmentButton,
+                i === 0 && { borderTopLeftRadius: 10, borderBottomLeftRadius: 10 },
+                i === repeatOptions.length - 1 && { borderTopRightRadius: 10, borderBottomRightRadius: 10, borderRightWidth: 1 },
               ]}
               onPress={() => setRepeatType(option.id)}
             >
               <Text
                 style={[
-                  styles.optionText,
-                  repeatType === option.id && styles.selectedOptionText,
+                  styles.segmentText,
+                  repeatType === option.id && styles.selectedSegmentText,
                 ]}
               >
                 {option.label}
@@ -280,42 +281,41 @@ export default function AddTaskScreen() {
         </View>
       </View>
 
-      {repeatType === 'once' && (
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Date</Text>
+      <View style={styles.rowGroup}>
+        {repeatType === 'once' && (
+          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+            <Text style={styles.label}>Date</Text>
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={styles.dateButtonText}>
+                {reminderTime.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
+        <View style={[styles.inputGroup, { flex: 1 }]}>
+          <Text style={styles.label}>Time</Text>
           <TouchableOpacity
             style={styles.dateButton}
-            onPress={() => setShowDatePicker(true)}
+            onPress={() => setShowTimePicker(true)}
           >
             <Text style={styles.dateButtonText}>
-              📅 {reminderTime.toDateString()}
+              {reminderTime.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Reminder Time</Text>
-
-        <TouchableOpacity
-          style={styles.dateButton}
-          onPress={() => setShowTimePicker(true)}
-        >
-          <Text style={styles.dateButtonText}>
-            ⏰{' '}
-            {reminderTime.toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <Text style={styles.notice}>
         {notificationsSupported
-          ? 'A reminder will be scheduled for the time you choose.'
-          : 'Reminders work after you install the APK. Expo Go cannot send them.'}
+          ? 'A reminder will be scheduled for the selected time.'
+          : 'Note: Push notifications only work in the standalone APK, not in Expo Go.'}
       </Text>
 
       {showDatePicker && (
@@ -343,7 +343,7 @@ export default function AddTaskScreen() {
         disabled={saving}
       >
         <Text style={styles.saveButtonText}>
-          {saving ? 'Saving…' : '💾 Save Task'}
+          {saving ? 'Saving...' : 'Save task'}
         </Text>
       </TouchableOpacity>
 
@@ -361,38 +361,35 @@ export default function AddTaskScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F4F1EA',
   },
   content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  screenTitle: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#6C63FF',
-    marginBottom: 20,
+    padding: 20,
+    paddingBottom: 60,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  rowGroup: {
+    flexDirection: 'row',
   },
   label: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#1C2430',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#FFF',
-    color: '#222',
+    backgroundColor: '#FFFFFF',
+    color: '#1C2430',
     borderRadius: 10,
     padding: 14,
-    fontSize: 16,
+    fontSize: 15,
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: '#E2E8F0',
   },
   textArea: {
-    height: 90,
+    height: 100,
     textAlignVertical: 'top',
   },
   optionGrid: {
@@ -400,92 +397,95 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-  },
   optionButton: {
-    backgroundColor: '#FFF',
-    paddingHorizontal: 14,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: '#E2E8F0',
   },
   selectedOption: {
-    backgroundColor: '#6C63FF',
-    borderColor: '#6C63FF',
+    backgroundColor: '#1F3A5F',
+    borderColor: '#1F3A5F',
   },
   optionText: {
-    color: '#333',
-    fontWeight: '600',
+    color: '#5C6773',
+    fontWeight: '500',
+    fontSize: 14,
   },
   selectedOptionText: {
-    color: '#FFF',
+    color: '#FFFFFF',
   },
-  priorityButton: {
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius: 10,
+  },
+  segmentButton: {
     flex: 1,
-    backgroundColor: '#FFF',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 12,
-    paddingHorizontal: 6,
-    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: '#E2E8F0',
+    borderRightWidth: 0,
     alignItems: 'center',
   },
-  priorityText: {
-    fontWeight: '700',
-    color: '#333',
+  selectedSegmentButton: {
+    backgroundColor: '#1F3A5F',
+    borderColor: '#1F3A5F',
+    borderRightWidth: 1,
   },
-  repeatButton: {
-    flex: 1,
-    backgroundColor: '#FFF',
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#DDD',
-    alignItems: 'center',
+  segmentText: {
+    fontWeight: '500',
+    color: '#5C6773',
+    fontSize: 14,
+  },
+  selectedSegmentText: {
+    color: '#FFFFFF',
   },
   dateButton: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#FFFFFF',
     padding: 14,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
   },
   dateButtonText: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '600',
+    fontSize: 15,
+    color: '#1C2430',
+    fontWeight: '500',
   },
   notice: {
-    color: '#666',
+    color: '#5C6773',
     fontSize: 13,
-    marginBottom: 16,
+    marginBottom: 24,
+    lineHeight: 20,
   },
   saveButton: {
-    backgroundColor: '#6C63FF',
-    padding: 17,
-    borderRadius: 12,
+    backgroundColor: '#1F3A5F',
+    height: 48,
+    borderRadius: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 5,
+    marginBottom: 12,
   },
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.7,
   },
   saveButtonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  cancelButton: {
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  cancelButtonText: {
-    color: '#666',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  cancelButton: {
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#5C6773',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });

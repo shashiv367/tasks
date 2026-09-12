@@ -1,11 +1,11 @@
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Linking, Alert } from 'react-native';
 
 import type { Task } from '../storage/taskStorage';
 
 type NotificationsModule = typeof import('expo-notifications');
 
-const isExpoGo = Constants.appOwnership === 'expo';
+export const isExpoGo = Constants.appOwnership === 'expo';
 
 let Notifications: NotificationsModule | null = null;
 
@@ -17,7 +17,7 @@ if (!isExpoGo) {
   }
 }
 
-const CHANNEL_ID = 'task-reminders';
+const CHANNEL_ID = 'task-alarms-v1';
 
 if (Notifications) {
   Notifications.setNotificationHandler({
@@ -33,32 +33,21 @@ if (Notifications) {
 
 export const notificationsSupported = Boolean(Notifications);
 
-const getPriorityEmoji = (priority: Task['priority']): string => {
-  switch (priority) {
-    case 'high':
-      return '🔴';
-    case 'medium':
-      return '🟡';
-    case 'low':
-      return '🟢';
-    default:
-      return '📌';
-  }
-};
-
 const ensureAndroidChannel = async (): Promise<void> => {
   if (!Notifications || Platform.OS !== 'android') return;
 
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: 'Task reminders',
-    importance: Notifications.AndroidImportance.HIGH,
+    name: 'Task alarms',
+    importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#6C63FF',
+    lightColor: '#1F3A5F',
     sound: 'default',
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    bypassDND: false,
   });
 };
 
-export const requestPermission = async (): Promise<boolean> => {
+export const requestPermission = async (showSettingsDialog = false): Promise<boolean> => {
   if (!Notifications) return false;
 
   const existing = await Notifications.getPermissionsAsync();
@@ -74,7 +63,32 @@ export const requestPermission = async (): Promise<boolean> => {
     return true;
   }
 
+  if (showSettingsDialog && status === 'denied') {
+    Alert.alert(
+      'Alarms are off',
+      'Turn on alarms and reminders for this app in Android settings.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            if (Platform.OS === 'android') {
+              Linking.openSettings();
+            }
+          },
+        },
+      ]
+    );
+  }
+
   return false;
+};
+
+export const checkPermissions = async (): Promise<boolean> => {
+  if (!Notifications) return false;
+  
+  const existing = await Notifications.getPermissionsAsync();
+  return existing.status === 'granted';
 };
 
 export const scheduleTaskNotification = async (
@@ -109,9 +123,11 @@ export const scheduleTaskNotification = async (
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
-        title: `${getPriorityEmoji(task.priority)} ${task.title}`,
-        body: task.description || 'Time to complete your task.',
+        title: task.title,
+        body: task.description || "It's time",
         sound: true,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        categoryId: 'alarm',
         data: { taskId: task.id },
       },
       trigger,
@@ -120,6 +136,35 @@ export const scheduleTaskNotification = async (
     console.error('Error scheduling notification:', error);
     return null;
   }
+};
+
+export const addNotificationListeners = (
+  onAlarmReceived: (taskId: string) => void
+) => {
+  if (!Notifications || isExpoGo) return () => {};
+
+  const receivedSub = Notifications.addNotificationReceivedListener(
+    (notification) => {
+      const content = notification.request.content;
+      if (content.categoryId === 'alarm' && content.data?.taskId) {
+        onAlarmReceived(content.data.taskId as string);
+      }
+    }
+  );
+
+  const responseSub = Notifications.addNotificationResponseReceivedListener(
+    (response) => {
+      const content = response.notification.request.content;
+      if (content.categoryId === 'alarm' && content.data?.taskId) {
+        onAlarmReceived(content.data.taskId as string);
+      }
+    }
+  );
+
+  return () => {
+    receivedSub.remove();
+    responseSub.remove();
+  };
 };
 
 export const cancelNotification = async (

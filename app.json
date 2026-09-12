@@ -18,7 +18,19 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "USE_FULL_SCREEN_INTENT",
+        "VIBRATE"
+      ]
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#1F3A5F",
+      "barStyle": "light-content",
+      "translucent": false
     },
     "web": {
       "output": "static",
@@ -38,10 +50,12 @@
       [
         "expo-notifications",
         {
-          "color": "#6C63FF",
-          "defaultChannel": "task-reminders"
+          "color": "#1F3A5F",
+          "defaultChannel": "task-alarms-v1"
         }
-      ]
+      ],
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
