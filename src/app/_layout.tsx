@@ -6,12 +6,21 @@ import {
   router,
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import { useColorScheme, StatusBar } from 'react-native';
 import { useEffect } from 'react';
-import { addNotificationListeners } from '../notifications/notificationHelper';
+import notifee, { EventType } from '@notifee/react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import React from 'react';
+
+// Handle background events
+notifee.onBackgroundEvent(async ({ type, detail }) => {
+  if (type === EventType.PRESS && detail.notification?.data?.taskId) {
+    setTimeout(() => {
+      router.push({ pathname: '/alarm', params: { taskId: detail.notification.data.taskId as string } });
+    }, 1000); // Give app a moment to mount if launched from killed state
+  }
+});
 
 SplashScreen.preventAutoHideAsync();
 
@@ -19,11 +28,14 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   useEffect(() => {
-    const cleanup = addNotificationListeners((taskId) => {
-      router.push({ pathname: '/alarm', params: { taskId } });
+    // Handle foreground events
+    const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS && detail.notification?.data?.taskId) {
+        router.push({ pathname: '/alarm', params: { taskId: detail.notification.data.taskId as string } });
+      }
     });
 
-    return cleanup;
+    return unsubscribe;
   }, []);
 
   return (
@@ -32,7 +44,7 @@ export default function RootLayout() {
     >
       <AnimatedSplashOverlay />
       
-      <StatusBar style="light" backgroundColor="#1F3A5F" translucent={false} />
+      <StatusBar barStyle="light-content" backgroundColor="#1F3A5F" translucent={false} />
 
       <Stack
         screenOptions={{

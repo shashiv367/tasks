@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, StatusBar } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 
 import { getAllTasks, completeTask, Task } from '../storage/taskStorage';
-import { cancelNotification } from '../notifications/notificationHelper';
+import { cancelTaskAlarm, scheduleTaskAlarm } from '../notifications/notificationHelper';
 
 export default function AlarmScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
@@ -25,7 +24,32 @@ export default function AlarmScreen() {
   }, [taskId]);
 
   const handleDismiss = async () => {
-    // Just close the screen
+    if (task?.notificationId) {
+      await cancelTaskAlarm(task.notificationId);
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
+  const handleSnooze = async () => {
+    if (!task) return;
+    
+    // Snooze for 10 minutes
+    const snoozeDate = new Date();
+    snoozeDate.setMinutes(snoozeDate.getMinutes() + 10);
+    
+    // Schedule a temporary one-time alarm
+    const snoozedTask: Task = {
+      ...task,
+      repeatType: 'once',
+      reminderTime: snoozeDate.toISOString(),
+    };
+    
+    await scheduleTaskAlarm(snoozedTask);
+    
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -36,13 +60,8 @@ export default function AlarmScreen() {
   const handleComplete = async () => {
     if (!task) return;
     
-    // Complete the task in storage
+    // Complete the task in storage (handles alarm cancellation internally now)
     await completeTask(task.id);
-    
-    // Cancel the notification if it's a one-time task
-    if (task.repeatType === 'once') {
-      await cancelNotification(task.notificationId);
-    }
     
     if (router.canGoBack()) {
       router.back();
@@ -54,7 +73,7 @@ export default function AlarmScreen() {
   if (!task) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-        <StatusBar style="light" />
+        <StatusBar barStyle="light-content" />
         <Text style={styles.title}>Loading...</Text>
         <TouchableOpacity style={styles.outlineBtn} onPress={handleDismiss}>
           <Text style={styles.outlineBtnText}>Dismiss</Text>
@@ -70,7 +89,7 @@ export default function AlarmScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 20 }]}>
-      <StatusBar style="light" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
       <View style={styles.content}>
         <Text style={styles.timeText}>{timeStr}</Text>
@@ -83,6 +102,10 @@ export default function AlarmScreen() {
       <View style={styles.actions}>
         <TouchableOpacity style={styles.completeBtn} onPress={handleComplete}>
           <Text style={styles.completeBtnText}>Complete</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.snoozeBtn} onPress={handleSnooze}>
+          <Text style={styles.snoozeBtnText}>Snooze (10m)</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.outlineBtn} onPress={handleDismiss}>
@@ -155,6 +178,18 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.3)',
   },
   outlineBtnText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  snoozeBtn: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    height: 60,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  snoozeBtnText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',

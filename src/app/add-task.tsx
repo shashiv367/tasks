@@ -12,11 +12,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 
-import { saveTask, setTaskNotificationId } from '../storage/taskStorage';
-import {
-  notificationsSupported,
-  scheduleTaskNotification,
-} from '../notifications/notificationHelper';
+import { saveTask } from '../storage/taskStorage';
+import { notificationsSupported } from '../notifications/notificationHelper';
 
 type Category =
   | 'health'
@@ -99,20 +96,14 @@ export default function AddTaskScreen() {
         return;
       }
 
-      const notificationId = await scheduleTaskNotification(task);
-
-      if (notificationId) {
-        await setTaskNotificationId(task.id, notificationId);
-      }
-
       let message = '';
       if (!notificationsSupported) {
         message = 'Saved. Alarms only work in the installed app, not Expo Go.';
-      } else if (notificationId) {
+      } else if (task.notificationId) {
         const timeStr = reminderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         message = `Saved. Alarm at ${timeStr}.`;
       } else {
-        message = 'Saved, but alarms are off. Enable notifications and alarms for this app in Android settings.';
+        message = 'Saved, but alarms might be off. Enable notifications and alarms for this app in Android settings.';
       }
 
       Alert.alert(

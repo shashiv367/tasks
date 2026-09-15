@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { scheduleTaskAlarm, cancelTaskAlarm } from '../notifications/notificationHelper';
 
 const TASKS_KEY = 'tasks';
 const HISTORY_KEY = 'task_history';
@@ -98,27 +99,62 @@ export const saveTask = async (
     | 'completedAt'
     | 'lastCompletedDate'
     | 'notificationId'
-  >
+  > & { id?: string; notificationId?: string | null; isCompleted?: boolean }
 ): Promise<Task | undefined> => {
   try {
     const existingTasks = await getAllTasks();
+    const isUpdate = !!task.id;
+    const existingTask = isUpdate ? existingTasks.find(t => t.id === task.id) : null;
+    
+    let newTask: Task;
+    
+    if (existingTask) {
+      newTask = {
+        ...existingTask,
+        title: task.title,
+        description: task.description || '',
+        category: task.category,
+        priority: task.priority,
+        reminderTime: task.reminderTime,
+        repeatType: task.repeatType,
+      };
+      
+      const timeChanged = existingTask.reminderTime !== newTask.reminderTime;
+      const repeatChanged = existingTask.repeatType !== newTask.repeatType;
+      
+      if ((timeChanged || repeatChanged) && existingTask.notificationId) {
+        await cancelTaskAlarm(existingTask.notificationId);
+        newTask.notificationId = null;
+      }
+    } else {
+      newTask = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: task.title,
+        description: task.description || '',
+        category: task.category,
+        priority: task.priority,
+        reminderTime: task.reminderTime,
+        repeatType: task.repeatType,
+        isCompleted: false,
+        lastCompletedDate: null,
+        createdAt: new Date().toISOString(),
+        completedAt: null,
+        notificationId: null,
+      };
+    }
 
-    const newTask: Task = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      title: task.title,
-      description: task.description || '',
-      category: task.category,
-      priority: task.priority,
-      reminderTime: task.reminderTime,
-      repeatType: task.repeatType,
-      isCompleted: false,
-      lastCompletedDate: null,
-      createdAt: new Date().toISOString(),
-      completedAt: null,
-      notificationId: null,
-    };
+    if (!newTask.notificationId && !newTask.isCompleted) {
+      const notificationId = await scheduleTaskAlarm(newTask);
+      if (notificationId) {
+        newTask.notificationId = notificationId;
+      }
+    }
 
-    await saveAllTasks([...existingTasks, newTask]);
+    const updatedList = isUpdate 
+      ? existingTasks.map(t => (t.id === newTask.id ? newTask : t))
+      : [...existingTasks, newTask];
+
+    await saveAllTasks(updatedList);
     return newTask;
   } catch (error) {
     console.error('Error saving task:', error);
@@ -178,8 +214,13 @@ export const completeTask = async (taskId: string): Promise<void> => {
         ...item,
         isCompleted: true,
         completedAt: now.toISOString(),
+        notificationId: null, // we will cancel below
       };
     });
+
+    if (task.repeatType !== 'daily' && task.notificationId) {
+      await cancelTaskAlarm(task.notificationId);
+    }
 
     await saveAllTasks(updatedTasks);
 
@@ -204,6 +245,12 @@ export const completeTask = async (taskId: string): Promise<void> => {
 export const deleteTask = async (taskId: string): Promise<void> => {
   try {
     const tasks = await getAllTasks();
+    const taskToDelete = tasks.find(task => task.id === taskId);
+    
+    if (taskToDelete?.notificationId) {
+      await cancelTaskAlarm(taskToDelete.notificationId);
+    }
+    
     await saveAllTasks(tasks.filter(task => task.id !== taskId));
   } catch (error) {
     console.error('Error deleting task:', error);

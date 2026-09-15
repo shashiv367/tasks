@@ -1,69 +1,53 @@
 import Constants from 'expo-constants';
 import { Platform, Linking, Alert } from 'react-native';
+import notifee, {
+  AndroidImportance,
+  TriggerType,
+  RepeatFrequency,
+  AndroidCategory,
+  TimestampTrigger,
+} from '@notifee/react-native';
 
 import type { Task } from '../storage/taskStorage';
 
-type NotificationsModule = typeof import('expo-notifications');
-
 export const isExpoGo = Constants.appOwnership === 'expo';
-
-let Notifications: NotificationsModule | null = null;
-
-if (!isExpoGo) {
-  try {
-    Notifications = require('expo-notifications') as NotificationsModule;
-  } catch (error) {
-    console.warn('Notifications module is not available.', error);
-  }
-}
 
 const CHANNEL_ID = 'task-alarms-v1';
 
-if (Notifications) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-}
+export const notificationsSupported = !isExpoGo;
 
-export const notificationsSupported = Boolean(Notifications);
+export const ensureNotifeeChannel = async (): Promise<void> => {
+  if (isExpoGo || Platform.OS !== 'android') return;
 
-const ensureAndroidChannel = async (): Promise<void> => {
-  if (!Notifications || Platform.OS !== 'android') return;
-
-  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+  // We are creating/verifying the channel with HIGH importance for full-screen intents.
+  await notifee.createChannel({
+    id: CHANNEL_ID,
     name: 'Task alarms',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#1F3A5F',
+    importance: AndroidImportance.HIGH,
     sound: 'default',
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    bypassDND: false,
+    vibration: true,
+    vibrationPattern: [300, 250, 300, 250],
+    lightColor: '#1F3A5F',
   });
 };
 
 export const requestPermission = async (showSettingsDialog = false): Promise<boolean> => {
-  if (!Notifications) return false;
+  if (isExpoGo) return false;
 
-  const existing = await Notifications.getPermissionsAsync();
-  let status = existing.status;
+  const settings = await notifee.getNotificationSettings();
+  let status = settings.authorizationStatus;
 
-  if (status !== 'granted') {
-    const requested = await Notifications.requestPermissionsAsync();
-    status = requested.status;
+  if (status !== 1) { // 1 = AUTHORIZED
+    const requested = await notifee.requestPermission();
+    status = requested.authorizationStatus;
   }
 
-  if (status === 'granted') {
-    await ensureAndroidChannel();
+  if (status === 1) {
+    await ensureNotifeeChannel();
     return true;
   }
 
-  if (showSettingsDialog && status === 'denied') {
+  if (showSettingsDialog && status === 0) { // 0 = DENIED
     Alert.alert(
       'Alarms are off',
       'Turn on alarms and reminders for this app in Android settings.',
@@ -85,96 +69,99 @@ export const requestPermission = async (showSettingsDialog = false): Promise<boo
 };
 
 export const checkPermissions = async (): Promise<boolean> => {
-  if (!Notifications) return false;
+  if (isExpoGo) return false;
   
-  const existing = await Notifications.getPermissionsAsync();
-  return existing.status === 'granted';
+  const settings = await notifee.getNotificationSettings();
+  return settings.authorizationStatus === 1;
 };
 
-export const scheduleTaskNotification = async (
+export const checkAndRequestExactAlarmPermission = async (): Promise<boolean> => {
+  if (isExpoGo || Platform.OS !== 'android') return false;
+
+  const settings = await notifee.getNotificationSettings();
+  
+  // settings.android.alarm represents exact alarm permission
+  if (settings.android?.alarm === 1) {
+    return true;
+  }
+  
+  Alert.alert(
+    'Exact Alarm Permission Required',
+    'To schedule task alarms precisely, please allow exact alarms in settings.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Open Settings',
+        onPress: async () => {
+          await notifee.openAlarmPermissionSettings();
+        },
+      },
+    ]
+  );
+  
+  return false;
+};
+
+export const scheduleTaskAlarm = async (
   task: Task
 ): Promise<string | null> => {
-  if (!Notifications) return null;
+  if (isExpoGo) return null;
 
-  const hasPermission = await requestPermission();
-  if (!hasPermission) return null;
+  const hasNotificationPermission = await requestPermission();
+  if (!hasNotificationPermission) return null;
+  
+  if (Platform.OS === 'android') {
+    const hasAlarmPermission = await checkAndRequestExactAlarmPermission();
+    if (!hasAlarmPermission) return null;
+  }
 
   const date = new Date(task.reminderTime);
-  const triggerType = Notifications.SchedulableTriggerInputTypes;
-
-  const trigger =
-    task.repeatType === 'daily'
-      ? {
-          type: triggerType.DAILY,
-          hour: date.getHours(),
-          minute: date.getMinutes(),
-          channelId: CHANNEL_ID,
-        }
-      : {
-          type: triggerType.DATE,
-          date,
-          channelId: CHANNEL_ID,
-        };
 
   if (task.repeatType === 'once' && date.getTime() <= Date.now()) {
     return null;
   }
 
+  const trigger: TimestampTrigger = {
+    type: TriggerType.TIMESTAMP,
+    timestamp: date.getTime(),
+    alarmManager: {
+      allowWhileIdle: true,
+    },
+  };
+  
+  if (task.repeatType === 'daily') {
+    trigger.repeatFrequency = RepeatFrequency.DAILY;
+  }
+
   try {
-    return await Notifications.scheduleNotificationAsync({
-      content: {
-        title: task.title,
-        body: task.description || "It's time",
-        sound: true,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        categoryId: 'alarm',
-        data: { taskId: task.id },
+    return await notifee.createTriggerNotification({
+      id: task.id,
+      title: task.title,
+      body: task.description || "It's time",
+      android: {
+        channelId: CHANNEL_ID,
+        category: AndroidCategory.ALARM,
+        importance: AndroidImportance.HIGH,
+        sound: 'default',
+        fullScreenAction: { id: 'default' },
+        pressAction: { id: 'default' },
       },
-      trigger,
-    });
+      data: { taskId: task.id },
+    }, trigger);
   } catch (error) {
-    console.error('Error scheduling notification:', error);
+    console.error('Error scheduling notifee alarm:', error);
     return null;
   }
 };
 
-export const addNotificationListeners = (
-  onAlarmReceived: (taskId: string) => void
-) => {
-  if (!Notifications || isExpoGo) return () => {};
-
-  const receivedSub = Notifications.addNotificationReceivedListener(
-    (notification) => {
-      const content = notification.request.content;
-      if (content.categoryId === 'alarm' && content.data?.taskId) {
-        onAlarmReceived(content.data.taskId as string);
-      }
-    }
-  );
-
-  const responseSub = Notifications.addNotificationResponseReceivedListener(
-    (response) => {
-      const content = response.notification.request.content;
-      if (content.categoryId === 'alarm' && content.data?.taskId) {
-        onAlarmReceived(content.data.taskId as string);
-      }
-    }
-  );
-
-  return () => {
-    receivedSub.remove();
-    responseSub.remove();
-  };
-};
-
-export const cancelNotification = async (
+export const cancelTaskAlarm = async (
   notificationId?: string | null
 ): Promise<void> => {
-  if (!Notifications || !notificationId) return;
+  if (isExpoGo || !notificationId) return;
 
   try {
-    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    await notifee.cancelTriggerNotification(notificationId);
   } catch (error) {
-    console.error('Error cancelling notification:', error);
+    console.error('Error cancelling notifee alarm:', error);
   }
 };

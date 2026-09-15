@@ -19,7 +19,6 @@ import {
   Task,
 } from '../storage/taskStorage';
 import {
-  cancelNotification,
   requestPermission,
   checkPermissions,
   isExpoGo,
@@ -87,10 +86,6 @@ export default function HomeScreen() {
     setCompletingId(task.id);
 
     try {
-      if (task.repeatType === 'once') {
-        await cancelNotification(task.notificationId);
-      }
-
       await completeTask(task.id);
       await loadTasks();
     } finally {
@@ -99,7 +94,6 @@ export default function HomeScreen() {
   };
 
   const handleDelete = async (task: Task) => {
-    await cancelNotification(task.notificationId);
     await deleteTask(task.id);
     await loadTasks();
   };
