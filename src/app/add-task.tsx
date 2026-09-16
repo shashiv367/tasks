@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
-import { saveTask } from '../storage/taskStorage';
+import { saveTask, getAllTasks, Task } from '../storage/taskStorage';
 import { notificationsSupported } from '../notifications/notificationHelper';
+import { darkAlert } from '@/components/DarkAlert';
 
 type Category =
   | 'health'
@@ -26,22 +28,23 @@ type Category =
 type Priority = 'high' | 'medium' | 'low';
 type RepeatType = 'once' | 'daily';
 
-const categories: { id: Category; label: string }[] = [
-  { id: 'health', label: 'Health' },
-  { id: 'work', label: 'Work' },
-  { id: 'shopping', label: 'Shopping' },
-  { id: 'personal', label: 'Personal' },
-  { id: 'habits', label: 'Habits' },
-  { id: 'future', label: 'Future' },
+const categories: { id: Category; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id: 'personal', label: 'Personal', icon: 'person-outline' },
+  { id: 'work', label: 'Work', icon: 'briefcase-outline' },
+  { id: 'health', label: 'Health', icon: 'fitness-outline' },
+  { id: 'shopping', label: 'Shopping', icon: 'cart-outline' },
+  { id: 'habits', label: 'Habits', icon: 'repeat-outline' },
+  { id: 'future', label: 'Future', icon: 'telescope-outline' },
 ];
 
 const priorities: {
   id: Priority;
   label: string;
+  dot: string;
 }[] = [
-  { id: 'high', label: 'High' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'low', label: 'Low' },
+  { id: 'high', label: 'High', dot: '#EF4444' },
+  { id: 'medium', label: 'Medium', dot: '#EAB308' },
+  { id: 'low', label: 'Low', dot: '#22C55E' },
 ];
 
 const repeatOptions: { id: RepeatType; label: string }[] = [
@@ -50,28 +53,47 @@ const repeatOptions: { id: RepeatType; label: string }[] = [
 ];
 
 export default function AddTaskScreen() {
+  const { taskId } = useLocalSearchParams<{ taskId?: string }>();
+  const isEditing = !!taskId;
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-
   const [category, setCategory] = useState<Category>('personal');
   const [priority, setPriority] = useState<Priority>('medium');
   const [repeatType, setRepeatType] = useState<RepeatType>('once');
-
   const [reminderTime, setReminderTime] = useState(new Date());
+
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!taskId) return;
+    const loadTask = async () => {
+      const all = await getAllTasks();
+      const existing = all.find(t => t.id === taskId);
+      if (existing) {
+        setTitle(existing.title);
+        setDescription(existing.description || '');
+        setCategory(existing.category);
+        setPriority(existing.priority);
+        setRepeatType(existing.repeatType);
+        setReminderTime(new Date(existing.reminderTime));
+      }
+    };
+    void loadTask();
+  }, [taskId]);
 
   const handleSave = async () => {
     if (saving) return;
 
     if (!title.trim()) {
-      Alert.alert('Missing title', 'Please enter a task title.');
+      darkAlert('Missing title', 'Please enter a task title.');
       return;
     }
 
     if (repeatType === 'once' && reminderTime.getTime() <= Date.now()) {
-      Alert.alert(
+      darkAlert(
         'Invalid reminder time',
         'For a one-time task, please choose a future date and time.'
       );
@@ -82,6 +104,7 @@ export default function AddTaskScreen() {
 
     try {
       const task = await saveTask({
+        ...(taskId ? { id: taskId } : {}),
         title: title.trim(),
         description: description.trim(),
         category,
@@ -91,35 +114,15 @@ export default function AddTaskScreen() {
       });
 
       if (!task) {
-        Alert.alert('Error', 'Task could not be saved.');
+        darkAlert('Error', 'Task could not be saved.');
         setSaving(false);
         return;
       }
 
-      let message = '';
-      if (!notificationsSupported) {
-        message = 'Saved. Alarms only work in the installed app, not Expo Go.';
-      } else if (task.notificationId) {
-        const timeStr = reminderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        message = `Saved. Alarm at ${timeStr}.`;
-      } else {
-        message = 'Saved, but alarms might be off. Enable notifications and alarms for this app in Android settings.';
-      }
-
-      Alert.alert(
-        'Task saved',
-        message,
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ],
-        { cancelable: false }
-      );
+      router.back();
     } catch (error) {
       console.error('Could not save task:', error);
-      Alert.alert('Error', 'Task could not be saved. Please try again.');
+      darkAlert('Error', 'Task could not be saved. Please try again.');
       setSaving(false);
     }
   };
@@ -129,17 +132,14 @@ export default function AddTaskScreen() {
     selectedDate?: Date
   ) => {
     setShowDatePicker(false);
-
     if (event.type !== 'set' || !selectedDate) return;
 
     const newDate = new Date(reminderTime);
-
     newDate.setFullYear(
       selectedDate.getFullYear(),
       selectedDate.getMonth(),
       selectedDate.getDate()
     );
-
     setReminderTime(newDate);
   };
 
@@ -148,7 +148,6 @@ export default function AddTaskScreen() {
     selectedTime?: Date
   ) => {
     setShowTimePicker(false);
-
     if (event.type !== 'set' || !selectedTime) return;
 
     const newDate = new Date(reminderTime);
@@ -158,7 +157,6 @@ export default function AddTaskScreen() {
       0,
       0
     );
-
     setReminderTime(newDate);
   };
 
@@ -168,94 +166,75 @@ export default function AddTaskScreen() {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Title</Text>
+      {/* Title input card */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Task Title</Text>
         <TextInput
           style={styles.input}
-          placeholder="e.g. Call dentist"
-          placeholderTextColor="#A0AEC0"
+          placeholder="What do you need to do?"
+          placeholderTextColor="#64748B"
           value={title}
           onChangeText={setTitle}
-          maxLength={60}
+          maxLength={80}
         />
-      </View>
 
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Description</Text>
+        <Text style={[styles.label, { marginTop: 16 }]}>Description (optional)</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          placeholder="Add details if needed..."
-          placeholderTextColor="#A0AEC0"
+          placeholder="Add details, links, or notes..."
+          placeholderTextColor="#64748B"
           value={description}
           onChangeText={setDescription}
           multiline
-          numberOfLines={4}
+          numberOfLines={3}
         />
       </View>
 
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Category</Text>
-        <View style={styles.optionGrid}>
-          {categories.map(cat => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[
-                styles.optionButton,
-                category === cat.id && styles.selectedOption,
-              ]}
-              onPress={() => setCategory(cat.id)}
-            >
-              <Text
-                style={[
-                  styles.optionText,
-                  category === cat.id && styles.selectedOptionText,
-                ]}
-              >
-                {cat.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.inputGroup}>
+      {/* Priority card */}
+      <View style={styles.card}>
         <Text style={styles.label}>Priority</Text>
-        <View style={styles.segmentedControl}>
-          {priorities.map((p, i) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[
-                styles.segmentButton,
-                priority === p.id && styles.selectedSegmentButton,
-                i === 0 && { borderTopLeftRadius: 10, borderBottomLeftRadius: 10 },
-                i === priorities.length - 1 && { borderTopRightRadius: 10, borderBottomRightRadius: 10, borderRightWidth: 1 },
-              ]}
-              onPress={() => setPriority(p.id)}
-            >
-              <Text
+        <View style={styles.priorityRow}>
+          {priorities.map(p => {
+            const isSelected = priority === p.id;
+            return (
+              <TouchableOpacity
+                key={p.id}
                 style={[
-                  styles.segmentText,
-                  priority === p.id && styles.selectedSegmentText,
+                  styles.priorityBtn,
+                  isSelected && {
+                    borderColor: p.dot,
+                    backgroundColor: 'rgba(255,255,255,0.06)',
+                  },
                 ]}
+                onPress={() => setPriority(p.id)}
               >
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <View style={[styles.priorityDot, { backgroundColor: p.dot }]} />
+                <Text
+                  style={[
+                    styles.priorityBtnText,
+                    { color: isSelected ? '#FFFFFF' : '#8E95A5' },
+                  ]}
+                >
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Repeat</Text>
+      {/* Date & Time card */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Schedule & Reminder</Text>
+        
+        {/* Repeat selector */}
         <View style={styles.segmentedControl}>
-          {repeatOptions.map((option, i) => (
+          {repeatOptions.map(option => (
             <TouchableOpacity
               key={option.id}
               style={[
                 styles.segmentButton,
                 repeatType === option.id && styles.selectedSegmentButton,
-                i === 0 && { borderTopLeftRadius: 10, borderBottomLeftRadius: 10 },
-                i === repeatOptions.length - 1 && { borderTopRightRadius: 10, borderBottomRightRadius: 10, borderRightWidth: 1 },
               ]}
               onPress={() => setRepeatType(option.id)}
             >
@@ -270,30 +249,30 @@ export default function AddTaskScreen() {
             </TouchableOpacity>
           ))}
         </View>
-      </View>
 
-      <View style={styles.rowGroup}>
-        {repeatType === 'once' && (
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Date</Text>
+        <View style={styles.dateTimeRow}>
+          {repeatType === 'once' && (
             <TouchableOpacity
-              style={styles.dateButton}
+              style={styles.pickerBtn}
               onPress={() => setShowDatePicker(true)}
             >
-              <Text style={styles.dateButtonText}>
-                {reminderTime.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              <Ionicons name="calendar-outline" size={16} color="#3B82F6" style={{ marginRight: 8 }} />
+              <Text style={styles.pickerBtnText}>
+                {reminderTime.toLocaleDateString(undefined, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}
               </Text>
             </TouchableOpacity>
-          </View>
-        )}
+          )}
 
-        <View style={[styles.inputGroup, { flex: 1 }]}>
-          <Text style={styles.label}>Time</Text>
           <TouchableOpacity
-            style={styles.dateButton}
+            style={styles.pickerBtn}
             onPress={() => setShowTimePicker(true)}
           >
-            <Text style={styles.dateButtonText}>
+            <Ionicons name="time-outline" size={16} color="#3B82F6" style={{ marginRight: 8 }} />
+            <Text style={styles.pickerBtnText}>
               {reminderTime.toLocaleTimeString([], {
                 hour: '2-digit',
                 minute: '2-digit',
@@ -301,14 +280,50 @@ export default function AddTaskScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {!notificationsSupported && (
+          <Text style={styles.notice}>
+            Note: Alarms only fire in installed builds, not in Expo Go.
+          </Text>
+        )}
       </View>
 
-      <Text style={styles.notice}>
-        {notificationsSupported
-          ? 'A reminder will be scheduled for the selected time.'
-          : 'Note: Push notifications only work in the standalone APK, not in Expo Go.'}
-      </Text>
+      {/* Category card */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Category</Text>
+        <View style={styles.categoryGrid}>
+          {categories.map(cat => {
+            const isSelected = category === cat.id;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryChip,
+                  isSelected && styles.categoryChipSelected,
+                ]}
+                onPress={() => setCategory(cat.id)}
+              >
+                <Ionicons
+                  name={cat.icon}
+                  size={15}
+                  color={isSelected ? '#3B82F6' : '#8E95A5'}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    isSelected && styles.categoryChipTextSelected,
+                  ]}
+                >
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
 
+      {/* Date Pickers */}
       {showDatePicker && (
         <DateTimePicker
           value={reminderTime}
@@ -328,13 +343,16 @@ export default function AddTaskScreen() {
         />
       )}
 
+      {/* Action Buttons */}
       <TouchableOpacity
         style={[styles.saveButton, saving && styles.disabledButton]}
         onPress={handleSave}
         disabled={saving}
+        activeOpacity={0.85}
       >
+        <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
         <Text style={styles.saveButtonText}>
-          {saving ? 'Saving...' : 'Save task'}
+          {saving ? 'Saving...' : isEditing ? 'Update Task' : 'Create Task'}
         </Text>
       </TouchableOpacity>
 
@@ -352,131 +370,181 @@ export default function AddTaskScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F1EA',
+    backgroundColor: '#000000',
   },
   content: {
-    padding: 20,
-    paddingBottom: 60,
+    padding: 16,
+    paddingBottom: 40,
   },
-  inputGroup: {
-    marginBottom: 24,
-  },
-  rowGroup: {
-    flexDirection: 'row',
+  card: {
+    backgroundColor: '#12151C',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1E2430',
+    padding: 16,
+    marginBottom: 16,
   },
   label: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#1C2430',
-    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E95A5',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: '#FFFFFF',
-    color: '#1C2430',
-    borderRadius: 10,
+    backgroundColor: '#161922',
+    color: '#FFFFFF',
+    borderRadius: 12,
     padding: 14,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#242A38',
   },
   textArea: {
-    height: 100,
+    height: 84,
     textAlignVertical: 'top',
   },
-  optionGrid: {
+  priorityRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  priorityBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#161922',
+    borderWidth: 1,
+    borderColor: '#242A38',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  priorityBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: '#161922',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  selectedSegmentButton: {
+    backgroundColor: '#16233B',
+  },
+  segmentText: {
+    color: '#8E95A5',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  selectedSegmentText: {
+    color: '#3B82F6',
+    fontWeight: '700',
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  pickerBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#161922',
+    borderWidth: 1,
+    borderColor: '#242A38',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  pickerBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notice: {
+    color: '#64748B',
+    fontSize: 12,
+    marginTop: 10,
+    lineHeight: 18,
+  },
+  categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  optionButton: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  selectedOption: {
-    backgroundColor: '#1F3A5F',
-    borderColor: '#1F3A5F',
-  },
-  optionText: {
-    color: '#5C6773',
-    fontWeight: '500',
-    fontSize: 14,
-  },
-  selectedOptionText: {
-    color: '#FFFFFF',
-  },
-  segmentedControl: {
+  categoryChip: {
     flexDirection: 'row',
-    borderRadius: 10,
-  },
-  segmentButton: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRightWidth: 0,
     alignItems: 'center',
-  },
-  selectedSegmentButton: {
-    backgroundColor: '#1F3A5F',
-    borderColor: '#1F3A5F',
-    borderRightWidth: 1,
-  },
-  segmentText: {
-    fontWeight: '500',
-    color: '#5C6773',
-    fontSize: 14,
-  },
-  selectedSegmentText: {
-    color: '#FFFFFF',
-  },
-  dateButton: {
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 10,
+    backgroundColor: '#161922',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
+    borderColor: '#242A38',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  dateButtonText: {
-    fontSize: 15,
-    color: '#1C2430',
-    fontWeight: '500',
+  categoryChipSelected: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
   },
-  notice: {
-    color: '#5C6773',
+  categoryChipText: {
+    color: '#8E95A5',
     fontSize: 13,
-    marginBottom: 24,
-    lineHeight: 20,
+    fontWeight: '500',
+  },
+  categoryChipTextSelected: {
+    color: '#3B82F6',
+    fontWeight: '700',
   },
   saveButton: {
-    backgroundColor: '#1F3A5F',
-    height: 48,
-    borderRadius: 10,
+    backgroundColor: '#3B82F6',
+    height: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 8,
     marginBottom: 12,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   disabledButton: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   cancelButton: {
     height: 48,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#12151C',
+    borderWidth: 1,
+    borderColor: '#1E2430',
   },
   cancelButtonText: {
-    color: '#5C6773',
-    fontSize: 15,
-    fontWeight: '500',
+    color: '#8E95A5',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

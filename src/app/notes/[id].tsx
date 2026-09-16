@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -10,6 +10,8 @@ import {
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { darkAlert } from '@/components/DarkAlert';
 
 import {
   saveNote,
@@ -25,10 +27,10 @@ export default function NoteEditorScreen() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  
+
   // Track the actual saved ID if we create one during this session
   const [currentId, setCurrentId] = useState<string | null>(isNew ? null : id);
-  
+
   // Track initial values to know if it's dirty
   const initialRef = useRef({ title: '', body: '' });
 
@@ -50,7 +52,6 @@ export default function NoteEditorScreen() {
 
   // Auto-save logic
   useEffect(() => {
-    // Only auto-save if something changed from the initial load
     if (title === initialRef.current.title && body === initialRef.current.body) {
       return;
     }
@@ -63,10 +64,9 @@ export default function NoteEditorScreen() {
   }, [title, body]);
 
   const performSave = async (isAutoSave = false) => {
-    // Don't save empty notes
     if (!title.trim() && !body.trim()) {
       if (!isAutoSave) {
-        Alert.alert('Empty Note', 'Please add a title or some text.');
+        darkAlert('Empty Note', 'Please add a title or some text.');
       }
       return;
     }
@@ -90,16 +90,16 @@ export default function NoteEditorScreen() {
           setCurrentId(newNote.id);
         }
       }
-      
+
       initialRef.current = { title, body };
-      
+
       if (!isAutoSave) {
         router.back();
       }
     } catch (error) {
       console.error('Error saving note:', error);
       if (!isAutoSave) {
-        Alert.alert('Error', 'Failed to save note.');
+        darkAlert('Error', 'Failed to save note.');
       }
     } finally {
       if (!isAutoSave) {
@@ -118,7 +118,7 @@ export default function NoteEditorScreen() {
       return;
     }
 
-    Alert.alert(
+    darkAlert(
       'Delete Note',
       'Are you sure you want to delete this note?',
       [
@@ -136,27 +136,32 @@ export default function NoteEditorScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
         <TextInput
           style={styles.titleInput}
           placeholder="Note title"
-          placeholderTextColor="#A0AEC0"
+          placeholderTextColor="#64748B"
           value={title}
           onChangeText={setTitle}
           maxLength={100}
         />
-        
+
         <View style={styles.headerActions}>
           {!isNew && currentId && (
             <TouchableOpacity onPress={handleDelete} style={styles.iconBtn}>
-              <Text style={styles.deleteText}>Delete</Text>
+              <Ionicons name="trash-outline" size={20} color="#EF4444" />
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={handleManualSave} style={styles.saveBtn} disabled={isSaving}>
+          <TouchableOpacity
+            onPress={handleManualSave}
+            style={styles.saveBtn}
+            disabled={isSaving}
+          >
+            <Ionicons name="checkmark" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
             <Text style={styles.saveBtnText}>{isSaving ? 'Saving...' : 'Save'}</Text>
           </TouchableOpacity>
         </View>
@@ -164,8 +169,8 @@ export default function NoteEditorScreen() {
 
       <TextInput
         style={styles.bodyInput}
-        placeholder="Start typing..."
-        placeholderTextColor="#A0AEC0"
+        placeholder="Start writing..."
+        placeholderTextColor="#64748B"
         value={body}
         onChangeText={setBody}
         multiline
@@ -178,55 +183,53 @@ export default function NoteEditorScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F4F1EA',
+    borderBottomColor: '#1E2430',
   },
   titleInput: {
     flex: 1,
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1C2430',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
     marginRight: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   iconBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  deleteText: {
-    color: '#9B2C2C',
-    fontSize: 15,
-    fontWeight: '500',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#161922',
   },
   saveBtn: {
-    backgroundColor: '#1F3A5F',
+    backgroundColor: '#3B82F6',
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   bodyInput: {
     flex: 1,
-    padding: 20,
+    padding: 18,
     fontSize: 16,
-    color: '#1C2430',
+    color: '#E2E8F0',
     lineHeight: 24,
   },
 });

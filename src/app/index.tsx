@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,12 @@ import {
   RefreshControl,
   Modal,
   Pressable,
-  Animated,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import {
   getTodayTasks,
@@ -29,6 +30,7 @@ import {
   notificationsSupported,
   requestFullScreenIntentPermission,
 } from '../notifications/notificationHelper';
+import { BottomTabBar } from '@/components/BottomTabBar';
 
 type ViewFilter = 'all' | 'today' | 'upcoming';
 type PriorityFilter = 'all' | 'high' | 'medium' | 'low';
@@ -57,6 +59,8 @@ export default function HomeScreen() {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [quote] = useState(
     MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]
   );
@@ -115,10 +119,15 @@ export default function HomeScreen() {
     await loadTasks();
   };
 
-  const filteredTasks =
-    priorityFilter === 'all'
-      ? tasks
-      : tasks.filter(t => t.priority === priorityFilter);
+  // Filter tasks based on priority and search query
+  const filteredTasks = tasks.filter(t => {
+    const matchPriority = priorityFilter === 'all' || t.priority === priorityFilter;
+    const matchSearch =
+      !searchQuery.trim() ||
+      t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchPriority && matchSearch;
+  });
 
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (sortMode === 'priority') {
@@ -152,31 +161,41 @@ export default function HomeScreen() {
 
     return (
       <View style={styles.card}>
-        {/* Top row: checkbox + title + three-dot */}
+        {/* Top row: checkbox + meta + three-dot */}
         <View style={styles.cardTopRow}>
           <TouchableOpacity
-            style={styles.checkbox}
+            style={styles.checkboxTouch}
             onPress={() => handleComplete(item)}
             disabled={completingId === item.id}
-          />
+          >
+            <View style={[styles.checkboxSquircle, completingId === item.id && styles.checkboxDisabled]}>
+              {completingId === item.id ? (
+                <Ionicons name="checkmark" size={14} color="#3B82F6" />
+              ) : null}
+            </View>
+          </TouchableOpacity>
+
           <View style={styles.cardMeta}>
-            <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
             <View style={styles.cardDateRow}>
-              {/* calendar emoji */}
-              <Text style={styles.calIcon}>📅</Text>
+              <Ionicons name="calendar-outline" size={13} color="#8E95A5" style={{ marginRight: 5 }} />
               <Text style={styles.cardDate}>{formatDateTime(item.reminderTime)}</Text>
             </View>
-            {/* priority badge */}
+            {/* Priority badge pill */}
             <View style={styles.priorityBadge}>
-              <View style={[styles.priorityDot, { backgroundColor: dot }]} />
+              <View style={[styles.priorityBadgeDot, { backgroundColor: dot }]} />
               <Text style={[styles.priorityBadgeText, { color: dot }]}>{priorityLabel}</Text>
             </View>
           </View>
+
           <TouchableOpacity
             style={styles.threeDotBtn}
             onPress={() => setMenuTaskId(item.id)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.threeDot}>⋮</Text>
+            <Ionicons name="ellipsis-vertical" size={18} color="#8E95A5" />
           </TouchableOpacity>
         </View>
 
@@ -190,7 +209,7 @@ export default function HomeScreen() {
             onPress={() => handleComplete(item)}
             disabled={completingId === item.id}
           >
-            <Text style={styles.completeIcon}>✅</Text>
+            <Ionicons name="checkmark-circle-outline" size={16} color="#22C55E" />
             <Text style={styles.completeText}>
               {completingId === item.id ? 'Completing…' : 'Complete'}
             </Text>
@@ -205,7 +224,7 @@ export default function HomeScreen() {
               router.push({ pathname: '/add-task', params: { taskId: item.id } });
             }}
           >
-            <Text style={styles.editIcon}>✏️</Text>
+            <Ionicons name="pencil" size={15} color="#3B82F6" />
             <Text style={styles.editText}>Edit</Text>
           </TouchableOpacity>
 
@@ -215,7 +234,7 @@ export default function HomeScreen() {
             style={styles.actionBtn}
             onPress={() => handleDelete(item.id)}
           >
-            <Text style={styles.deleteIcon}>🗑️</Text>
+            <Ionicons name="trash-outline" size={15} color="#EF4444" />
             <Text style={styles.deleteText}>Delete</Text>
           </TouchableOpacity>
         </View>
@@ -223,80 +242,111 @@ export default function HomeScreen() {
     );
   };
 
-  // ─── Three-dot context menu ───────────────────────────────────────────────────
   const contextTask = tasks.find(t => t.id === menuTaskId);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* ─── Header ─────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Tasks</Text>
           <Text style={styles.headerSub}>Stay consistent, make it happen.</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerIconBtn}>
-            <Text style={styles.headerIcon}>🔍</Text>
+          <TouchableOpacity
+            style={[styles.headerIconBtn, searchOpen && styles.headerIconBtnActive]}
+            onPress={() => {
+              setSearchOpen(!searchOpen);
+              if (searchOpen) setSearchQuery('');
+            }}
+          >
+            <Ionicons name="search" size={18} color="#FFFFFF" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconBtn}>
-            <Text style={styles.headerIcon}>⋮</Text>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={onRefresh}
+          >
+            <Ionicons name="refresh" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ─── View Filter Tabs ───────────────────────────────────── */}
+      {/* ─── Search Bar (if opened) ─────────────────────────────── */}
+      {searchOpen && (
+        <View style={styles.searchBarContainer}>
+          <Ionicons name="search" size={16} color="#8E95A5" style={{ marginLeft: 12, marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search tasks..."
+            placeholderTextColor="#64748B"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 8 }}>
+              <Ionicons name="close-circle" size={16} color="#8E95A5" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
+
+      {/* ─── View Filter Tabs (All / Today / Upcoming) ─────────────── */}
       <View style={styles.viewFiltersRow}>
-        {(['all', 'today', 'upcoming'] as const).map(tab => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.viewTab, viewFilter === tab && styles.viewTabActive]}
-            onPress={() => { setViewFilter(tab); }}
-          >
-            <Text style={[styles.viewTabText, viewFilter === tab && styles.viewTabTextActive]}>
-              {tab === 'all' ? 'All' : tab === 'today' ? 'Today' : 'Upcoming'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {(['all', 'today', 'upcoming'] as const).map(tab => {
+          const isActive = viewFilter === tab;
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.viewTab, isActive && styles.viewTabActive]}
+              onPress={() => setViewFilter(tab)}
+            >
+              <Text style={[styles.viewTabText, isActive && styles.viewTabTextActive]}>
+                {tab === 'all' ? 'All' : tab === 'today' ? 'Today' : 'Upcoming'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* ─── Priority Filters ───────────────────────────────────── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.priorityScroll}
-        contentContainerStyle={styles.priorityScrollContent}
-      >
-        {/* All */}
-        <TouchableOpacity
-          style={[styles.priorityPill, priorityFilter === 'all' && styles.priorityPillActiveAll]}
-          onPress={() => setPriorityFilter('all')}
+      {/* ─── Priority Filters Row ───────────────────────────────── */}
+      <View style={styles.priorityFilterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.priorityScrollContent}
         >
-          <Text style={[styles.priorityPillText, priorityFilter === 'all' && styles.priorityPillTextActiveAll]}>
-            All
-          </Text>
-        </TouchableOpacity>
-
-        {(['high', 'medium', 'low'] as const).map(p => (
+          {/* All pill */}
           <TouchableOpacity
-            key={p}
-            style={[styles.priorityPill, styles.priorityPillDark]}
-            onPress={() => setPriorityFilter(p === priorityFilter ? 'all' : p)}
+            style={[styles.priorityPill, priorityFilter === 'all' && styles.priorityPillActiveAll]}
+            onPress={() => setPriorityFilter('all')}
           >
-            <View style={[styles.filterDot, { backgroundColor: PRIORITY_DOT[p] }]} />
-            <Text style={[
-              styles.priorityPillText,
-              { color: priorityFilter === p ? '#fff' : '#aaa' }
-            ]}>
-              {p === 'high' ? 'High' : p === 'medium' ? 'Medium' : 'Low'}
+            <Text style={[styles.priorityPillText, priorityFilter === 'all' && styles.priorityPillTextActiveAll]}>
+              All
             </Text>
           </TouchableOpacity>
-        ))}
 
-        {/* Filter icon */}
-        <TouchableOpacity style={styles.filterIconBtn}>
-          <Text style={styles.filterIconText}>⚙</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          {(['high', 'medium', 'low'] as const).map(p => {
+            const isSelected = priorityFilter === p;
+            return (
+              <TouchableOpacity
+                key={p}
+                style={[
+                  styles.priorityPill,
+                  styles.priorityPillDark,
+                  isSelected && { borderColor: PRIORITY_DOT[p], borderWidth: 1 },
+                ]}
+                onPress={() => setPriorityFilter(isSelected ? 'all' : p)}
+              >
+                <View style={[styles.filterDot, { backgroundColor: PRIORITY_DOT[p] }]} />
+                <Text style={[styles.priorityPillText, { color: isSelected ? '#FFFFFF' : '#A0AEC0' }]}>
+                  {p === 'high' ? 'High' : p === 'medium' ? 'Medium' : 'Low'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* ─── Stats + Sort ───────────────────────────────────────── */}
       <View style={styles.statsRow}>
@@ -307,7 +357,8 @@ export default function HomeScreen() {
           style={styles.sortBtn}
           onPress={() => setSortMenuOpen(true)}
         >
-          <Text style={styles.sortBtnText}>Sort: {sortLabel} ▾</Text>
+          <Text style={styles.sortBtnText}>Sort: {sortLabel}</Text>
+          <Ionicons name="chevron-down" size={13} color="#8E95A5" style={{ marginLeft: 4 }} />
         </TouchableOpacity>
       </View>
 
@@ -337,35 +388,15 @@ export default function HomeScreen() {
 
       {/* ─── FAB ────────────────────────────────────────────────── */}
       <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 80 }]}
+        style={[styles.fab, { bottom: insets.bottom + 70 }]}
         onPress={() => router.push('/add-task')}
         activeOpacity={0.85}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Ionicons name="add" size={32} color="#FFFFFF" />
       </TouchableOpacity>
 
       {/* ─── Bottom Tab Bar ─────────────────────────────────────── */}
-      <View style={[styles.tabBar, { paddingBottom: insets.bottom }]}>
-        {[
-          { icon: '🏠', label: 'Tasks', active: true },
-          { icon: '📄', label: 'Notes', onPress: () => router.push('/notes') },
-          { icon: '🕐', label: 'History', onPress: () => router.push('/history') },
-          { icon: '⚙️', label: 'Settings', onPress: () => {} },
-        ].map((tab, i) => (
-          <TouchableOpacity
-            key={i}
-            style={styles.tabItem}
-            onPress={tab.onPress}
-          >
-            <Text style={[styles.tabIcon, tab.active && styles.tabIconActive]}>
-              {tab.icon}
-            </Text>
-            <Text style={[styles.tabLabel, tab.active && styles.tabLabelActive]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <BottomTabBar activeTab="tasks" />
 
       {/* ─── Context Menu Modal ─────────────────────────────────── */}
       <Modal
@@ -380,24 +411,29 @@ export default function HomeScreen() {
               style={styles.menuItem}
               onPress={() => {
                 setMenuTaskId(null);
-                if (contextTask) router.push({ pathname: '/add-task', params: { taskId: contextTask.id } });
+                if (contextTask) {
+                  router.push({ pathname: '/add-task', params: { taskId: contextTask.id } });
+                }
               }}
             >
-              <Text style={styles.menuItemText}>✏️  Edit task</Text>
+              <Ionicons name="pencil" size={16} color="#3B82F6" style={{ marginRight: 10 }} />
+              <Text style={styles.menuItemText}>Edit task</Text>
             </TouchableOpacity>
             <View style={styles.menuSep} />
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => contextTask && handleComplete(contextTask)}
             >
-              <Text style={styles.menuItemText}>✅  Mark complete</Text>
+              <Ionicons name="checkmark-circle" size={16} color="#22C55E" style={{ marginRight: 10 }} />
+              <Text style={styles.menuItemText}>Mark complete</Text>
             </TouchableOpacity>
             <View style={styles.menuSep} />
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => contextTask && handleDelete(contextTask.id)}
             >
-              <Text style={[styles.menuItemText, { color: '#EF4444' }]}>🗑️  Delete task</Text>
+              <Ionicons name="trash" size={16} color="#EF4444" style={{ marginRight: 10 }} />
+              <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Delete task</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -412,19 +448,30 @@ export default function HomeScreen() {
       >
         <Pressable style={styles.menuOverlay} onPress={() => setSortMenuOpen(false)}>
           <View style={styles.menuBox}>
-            {([['latest', 'Latest first'], ['earliest', 'Earliest first'], ['priority', 'By priority']] as const).map(
-              ([mode, label]) => (
-                <TouchableOpacity
-                  key={mode}
-                  style={styles.menuItem}
-                  onPress={() => { setSortMode(mode); setSortMenuOpen(false); }}
+            <Text style={styles.menuHeader}>Sort by</Text>
+            <View style={styles.menuSep} />
+            {(['latest', 'earliest', 'priority'] as const).map(mode => (
+              <TouchableOpacity
+                key={mode}
+                style={styles.menuItem}
+                onPress={() => {
+                  setSortMode(mode);
+                  setSortMenuOpen(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.menuItemText,
+                    sortMode === mode && { color: '#3B82F6', fontWeight: '700' },
+                  ]}
                 >
-                  <Text style={[styles.menuItemText, sortMode === mode && { color: '#3B82F6' }]}>
-                    {sortMode === mode ? '● ' : '○ '}{label}
-                  </Text>
-                </TouchableOpacity>
-              )
-            )}
+                  {mode === 'latest' ? 'Latest first' : mode === 'earliest' ? 'Earliest first' : 'Priority'}
+                </Text>
+                {sortMode === mode && (
+                  <Ionicons name="checkmark" size={18} color="#3B82F6" style={{ marginLeft: 'auto' }} />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </Pressable>
       </Modal>
@@ -435,107 +482,126 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#000000',
   },
 
-  // ── Header ──────────────────────────────────────────────────────
+  // ── Header ───────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
     paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 10,
+    paddingTop: 14,
+    paddingBottom: 14,
   },
   headerTitle: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#fff',
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
     letterSpacing: -0.5,
   },
   headerSub: {
     fontSize: 13,
-    color: '#888',
+    color: '#8E95A5',
     marginTop: 2,
   },
   headerRight: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
+    alignItems: 'center',
+    gap: 10,
   },
   headerIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#1a1a1a',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#161922',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#222632',
   },
-  headerIcon: {
-    fontSize: 16,
+  headerIconBtnActive: {
+    backgroundColor: '#1E293B',
+    borderColor: '#3B82F6',
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#12151C',
+    marginHorizontal: 20,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#222632',
+    height: 42,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 14,
+    paddingVertical: 0,
   },
 
-  // ── View Filter Tabs ────────────────────────────────────────────
+  // ── View Filter Tabs ─────────────────────────────────────────────
   viewFiltersRow: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    gap: 6,
+    gap: 8,
     marginBottom: 12,
   },
   viewTab: {
     paddingVertical: 7,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     borderRadius: 20,
+    backgroundColor: 'transparent',
   },
   viewTabActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#16233B',
   },
   viewTabText: {
-    color: '#aaa',
+    color: '#8E95A5',
     fontSize: 14,
     fontWeight: '500',
   },
   viewTabTextActive: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#3B82F6',
+    fontWeight: '700',
   },
 
-  // ── Priority Filters ────────────────────────────────────────────
-  priorityScroll: {
-    flexGrow: 0,
-    marginBottom: 12,
+  // ── Priority Filter Pills ────────────────────────────────────────
+  priorityFilterWrapper: {
+    marginBottom: 14,
   },
   priorityScrollContent: {
     paddingHorizontal: 20,
-    gap: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   priorityPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 5,
     paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#333',
-  },
-  priorityPillDark: {
-    backgroundColor: '#111',
+    borderColor: 'transparent',
   },
   priorityPillActiveAll: {
     borderColor: '#3B82F6',
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  priorityPillDark: {
+    backgroundColor: '#12151C',
+    borderColor: '#1E2430',
   },
   priorityPillText: {
     fontSize: 13,
-    fontWeight: '500',
-    color: '#aaa',
+    fontWeight: '600',
   },
   priorityPillTextActiveAll: {
     color: '#3B82F6',
-    fontWeight: '600',
   },
   filterDot: {
     width: 8,
@@ -546,17 +612,15 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#12151C',
+    borderWidth: 1,
+    borderColor: '#1E2430',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 2,
   },
-  filterIconText: {
-    color: '#aaa',
-    fontSize: 14,
-  },
 
-  // ── Stats + Sort ─────────────────────────────────────────────────
+  // ── Stats row ────────────────────────────────────────────────────
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -565,104 +629,107 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   statsText: {
-    color: '#aaa',
+    color: '#8E95A5',
     fontSize: 13,
     fontWeight: '500',
   },
   sortBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   sortBtnText: {
-    color: '#aaa',
+    color: '#8E95A5',
     fontSize: 13,
     fontWeight: '500',
   },
 
   // ── Task List ────────────────────────────────────────────────────
   listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingHorizontal: 18,
+    paddingBottom: 110,
   },
   listContentEmpty: {
-    flex: 1,
+    flexGrow: 1,
   },
 
   // ── Task Card ────────────────────────────────────────────────────
   card: {
-    backgroundColor: '#111',
-    borderRadius: 14,
+    backgroundColor: '#12151C',
+    borderRadius: 16,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1E2430',
     overflow: 'hidden',
   },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: 14,
-    gap: 10,
+    padding: 16,
+    gap: 12,
   },
-  checkbox: {
+  checkboxTouch: {
+    marginTop: 2,
+  },
+  checkboxSquircle: {
     width: 22,
     height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: '#555',
-    marginTop: 2,
-    flexShrink: 0,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#3E4758',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxDisabled: {
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
   },
   cardMeta: {
     flex: 1,
-    gap: 5,
   },
   cardTitle: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+    marginBottom: 6,
   },
   cardDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-  },
-  calIcon: {
-    fontSize: 12,
+    marginBottom: 8,
   },
   cardDate: {
-    color: '#888',
+    color: '#8E95A5',
     fontSize: 12,
+    fontWeight: '500',
   },
   priorityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#1e1e1e',
-    paddingVertical: 3,
-    paddingHorizontal: 9,
-    borderRadius: 12,
     alignSelf: 'flex-start',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
   },
-  priorityDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+  priorityBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   priorityBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   threeDotBtn: {
     padding: 4,
     marginTop: -2,
   },
-  threeDot: {
-    color: '#888',
-    fontSize: 20,
-    fontWeight: '700',
-  },
   cardDivider: {
     height: 1,
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#1A1E29',
     marginHorizontal: 14,
   },
   cardActions: {
@@ -674,30 +741,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 6,
     paddingVertical: 12,
   },
   actionDivider: {
     width: 1,
     height: 20,
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#1A1E29',
   },
-  completeIcon: { fontSize: 13 },
   completeText: {
     color: '#22C55E',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
-  editIcon: { fontSize: 13 },
   editText: {
     color: '#3B82F6',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
-  deleteIcon: { fontSize: 13 },
   deleteText: {
     color: '#EF4444',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
 
@@ -707,10 +771,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 80,
-    gap: 12,
+    gap: 14,
   },
   emptyQuote: {
-    color: '#666',
+    color: '#64748B',
     fontSize: 16,
     fontStyle: 'italic',
     textAlign: 'center',
@@ -723,85 +787,60 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
   },
 
-  // ── FAB ─────────────────────────────────────────────────────────
+  // ── FAB ──────────────────────────────────────────────────────────
   fab: {
     position: 'absolute',
-    right: 22,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
+    elevation: 8,
     shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 10,
   },
-  fabIcon: {
-    color: '#fff',
-    fontSize: 28,
-    fontWeight: '300',
-    lineHeight: 30,
-    marginTop: -2,
-  },
-
-  // ── Bottom Tab Bar ───────────────────────────────────────────────
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#0d0d0d',
-    borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
-    paddingTop: 10,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 3,
-    paddingBottom: 4,
-  },
-  tabIcon: {
-    fontSize: 20,
-    opacity: 0.5,
-  },
-  tabIconActive: {
-    opacity: 1,
-  },
-  tabLabel: {
-    color: '#666',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  tabLabelActive: {
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
 
   // ── Modals ───────────────────────────────────────────────────────
   menuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   menuBox: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 14,
-    width: 240,
+    backgroundColor: '#161922',
+    borderRadius: 16,
+    width: 250,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#242A38',
+  },
+  menuHeader: {
+    color: '#8E95A5',
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   menuItemText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
   },
   menuSep: {
     height: 1,
-    backgroundColor: '#2a2a2a',
+    backgroundColor: '#222632',
   },
 });

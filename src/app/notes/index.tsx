@@ -8,12 +8,16 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { getAllNotes, Note } from '../../storage/noteStorage';
+import { BottomTabBar } from '@/components/BottomTabBar';
 
 export default function NotesScreen() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
 
   const loadNotes = async () => {
     try {
@@ -36,14 +40,14 @@ export default function NotesScreen() {
     const date = new Date(dateString);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
-    
+
     if (isToday) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
-    
-    return date.toLocaleDateString(undefined, { 
-      month: 'short', 
-      day: 'numeric' 
+
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
     });
   };
 
@@ -55,6 +59,7 @@ export default function NotesScreen() {
       <TouchableOpacity
         style={styles.noteCard}
         onPress={() => router.push(`/notes/${item.id}`)}
+        activeOpacity={0.75}
       >
         <View style={styles.noteHeader}>
           <Text style={styles.noteTitle} numberOfLines={1}>
@@ -62,7 +67,7 @@ export default function NotesScreen() {
           </Text>
           <Text style={styles.noteDate}>{formatDate(item.updatedAt)}</Text>
         </View>
-        <Text style={styles.noteBodyPreview} numberOfLines={1}>
+        <Text style={styles.noteBodyPreview} numberOfLines={2}>
           {displayBody}
         </Text>
       </TouchableOpacity>
@@ -72,7 +77,7 @@ export default function NotesScreen() {
   return (
     <View style={styles.container}>
       {loading ? (
-        <ActivityIndicator size="large" color="#1F3A5F" style={styles.loader} />
+        <ActivityIndicator size="large" color="#3B82F6" style={styles.loader} />
       ) : (
         <FlatList
           data={notes}
@@ -81,22 +86,27 @@ export default function NotesScreen() {
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
+              <Ionicons name="document-text-outline" size={52} color="#475569" />
+              <Text style={styles.emptyTitle}>No notes yet</Text>
               <Text style={styles.emptyText}>
-                No notes yet. Write something you don't want to forget.
+                Tap the plus button below to jot down an idea or reminder.
               </Text>
             </View>
           }
         />
       )}
-      
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.newNoteBtn}
-          onPress={() => router.push('/notes/new')}
-        >
-          <Text style={styles.newNoteBtnText}>New note</Text>
-        </TouchableOpacity>
-      </View>
+
+      {/* FAB to add a note */}
+      <TouchableOpacity
+        style={[styles.fab, { bottom: insets.bottom + 70 }]}
+        onPress={() => router.push('/notes/new')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={32} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* Bottom Tab Bar */}
+      <BottomTabBar activeTab="notes" />
     </View>
   );
 }
@@ -104,79 +114,76 @@ export default function NotesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4F1EA',
+    backgroundColor: '#000000',
   },
   loader: {
-    marginTop: 40,
+    marginTop: 60,
   },
   listContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 100,
   },
   noteCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#12151C',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#1E2430',
   },
   noteHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   noteTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1C2430',
+    fontWeight: '700',
+    color: '#FFFFFF',
     flex: 1,
     marginRight: 12,
   },
   noteDate: {
-    fontSize: 13,
-    color: '#5C6773',
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
   },
   noteBodyPreview: {
     fontSize: 14,
-    color: '#5C6773',
+    color: '#8E95A5',
     lineHeight: 20,
   },
   emptyContainer: {
-    paddingTop: 60,
+    paddingTop: 80,
     alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   emptyText: {
-    fontSize: 15,
-    color: '#5C6773',
+    fontSize: 14,
+    color: '#64748B',
     textAlign: 'center',
-    paddingHorizontal: 20,
     lineHeight: 22,
   },
-  footer: {
+  fab: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 20,
-    backgroundColor: 'transparent',
-  },
-  newNoteBtn: {
-    backgroundColor: '#1F3A5F',
-    height: 48,
-    borderRadius: 10,
-    justifyContent: 'center',
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#3B82F6',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  newNoteBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    justifyContent: 'center',
+    elevation: 8,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
   },
 });

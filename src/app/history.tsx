@@ -9,29 +9,31 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 import { getHistory } from '../storage/taskStorage';
 import type { HistoryItem } from '../storage/taskStorage';
+import { BottomTabBar } from '@/components/BottomTabBar';
+import { darkAlert } from '@/components/DarkAlert';
 
 type HistorySection = {
   title: string;
   data: HistoryItem[];
 };
 
-const priorityColors = {
-  high: '#9B2C2C',
-  medium: '#8A6A2F',
-  low: '#2F6F6A',
+const PRIORITY_DOT: Record<string, string> = {
+  high: '#EF4444',
+  medium: '#EAB308',
+  low: '#22C55E',
 };
 
 export default function HistoryScreen() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   const insets = useSafeAreaInsets();
 
-  // Reload history each time this screen gains focus.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -39,13 +41,12 @@ export default function HistoryScreen() {
       const loadHistory = async () => {
         try {
           const tasks = await getHistory();
-
           if (active) {
             setHistory(tasks);
           }
         } catch {
           if (active) {
-            Alert.alert('Error', 'Could not load task history.');
+            darkAlert('Error', 'Could not load task history.');
           }
         } finally {
           if (active) {
@@ -64,17 +65,15 @@ export default function HistoryScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-
     try {
       setHistory(await getHistory());
     } catch {
-      Alert.alert('Error', 'Could not refresh task history.');
+      darkAlert('Error', 'Could not refresh task history.');
     } finally {
       setRefreshing(false);
     }
   };
 
-  // getHistory returns tasks with the most recent completion first.
   const groups = new Map<string, HistoryItem[]>();
 
   for (const task of history) {
@@ -83,11 +82,10 @@ export default function HistoryScreen() {
     const date = new Date(task.completedAt).toLocaleDateString(undefined, {
       weekday: 'short',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
     });
-    
-    const tasksForDate = groups.get(date) ?? [];
 
+    const tasksForDate = groups.get(date) ?? [];
     tasksForDate.push(task);
     groups.set(date, tasksForDate);
   }
@@ -106,13 +104,14 @@ export default function HistoryScreen() {
   ).length;
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View style={styles.container}>
+      {/* Stats Header */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>{completedToday}</Text>
           <Text style={styles.statLabel}>Completed today</Text>
         </View>
-        
+
         <View style={styles.statDivider} />
 
         <View style={styles.statItem}>
@@ -124,7 +123,7 @@ export default function HistoryScreen() {
       {loading ? (
         <ActivityIndicator
           size="large"
-          color="#1F3A5F"
+          color="#3B82F6"
           style={styles.loader}
         />
       ) : (
@@ -133,41 +132,57 @@ export default function HistoryScreen() {
           keyExtractor={item => item.id}
           refreshing={refreshing}
           onRefresh={onRefresh}
-          stickySectionHeadersEnabled={true}
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.list}
           renderSectionHeader={({ section }) => (
             <View style={styles.dateHeaderContainer}>
+              <Ionicons name="calendar-outline" size={14} color="#3B82F6" style={{ marginRight: 6 }} />
               <Text style={styles.dateHeading}>{section.title}</Text>
             </View>
           )}
-          renderItem={({ item }) => (
-            <View
-              style={[
-                styles.taskCard,
-                { borderLeftColor: priorityColors[item.priority] },
-              ]}
-            >
-              <View style={styles.taskHeader}>
-                <Text style={styles.taskTitle}>{item.title}</Text>
-                <Text style={styles.completedTime}>
-                  {item.completedAt
-                    ? new Date(item.completedAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : ''}
-                </Text>
-              </View>
+          renderItem={({ item }) => {
+            const dot = PRIORITY_DOT[item.priority] ?? '#8E95A5';
+            return (
+              <View style={styles.taskCard}>
+                <View style={styles.taskCardContent}>
+                  <View style={styles.checkBadge}>
+                    <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
+                  </View>
 
-              {item.description ? (
-                <Text style={styles.description} numberOfLines={1}>
-                  {item.description}
-                </Text>
-              ) : null}
-            </View>
-          )}
+                  <View style={styles.taskMeta}>
+                    <Text style={styles.taskTitle}>{item.title}</Text>
+
+                    {item.description ? (
+                      <Text style={styles.description} numberOfLines={1}>
+                        {item.description}
+                      </Text>
+                    ) : null}
+
+                    <View style={styles.cardFooterRow}>
+                      <View style={styles.priorityBadge}>
+                        <View style={[styles.priorityDot, { backgroundColor: dot }]} />
+                        <Text style={[styles.priorityBadgeText, { color: dot }]}>
+                          {item.priority}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.completedTime}>
+                        {item.completedAt
+                          ? new Date(item.completedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : ''}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            );
+          }}
           ListEmptyComponent={
             <View style={styles.emptyState}>
+              <Ionicons name="checkmark-done-circle-outline" size={48} color="#64748B" />
               <Text style={styles.emptyTitle}>No completed tasks</Text>
               <Text style={styles.emptyText}>
                 Complete tasks on the home screen to see them here.
@@ -176,23 +191,29 @@ export default function HistoryScreen() {
           }
         />
       )}
+
+      {/* Reusable Bottom Tab Bar */}
+      <BottomTabBar activeTab="history" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#F4F1EA' 
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
   },
-  statsContainer: { 
-    flexDirection: 'row', 
-    paddingVertical: 24,
+  statsContainer: {
+    flexDirection: 'row',
+    paddingVertical: 18,
     paddingHorizontal: 20,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    justifyContent: 'center',
+    backgroundColor: '#12151C',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1E2430',
     alignItems: 'center',
   },
   statItem: {
@@ -201,81 +222,116 @@ const styles = StyleSheet.create({
   },
   statDivider: {
     width: 1,
-    height: 40,
-    backgroundColor: '#E2E8F0',
+    height: 36,
+    backgroundColor: '#242A38',
   },
-  statNumber: { 
-    fontSize: 28, 
-    fontWeight: '600', 
-    color: '#1C2430' 
+  statNumber: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   statLabel: {
-    fontSize: 13,
-    color: '#5C6773',
+    fontSize: 12,
+    color: '#8E95A5',
     marginTop: 4,
+    fontWeight: '500',
   },
-  loader: { 
-    marginTop: 40 
+  loader: {
+    marginTop: 60,
   },
-  list: { 
-    paddingHorizontal: 16, 
-    paddingBottom: 32 
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
   dateHeaderContainer: {
-    backgroundColor: '#F4F1EA',
-    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingTop: 16,
   },
   dateHeading: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#5C6773',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#8E95A5',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   taskCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderLeftWidth: 3,
-    padding: 16,
+    backgroundColor: '#12151C',
+    borderRadius: 14,
+    padding: 14,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#1E2430',
   },
-  taskHeader: {
+  taskCardContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    gap: 12,
   },
-  taskTitle: { 
-    fontSize: 15, 
-    fontWeight: '500', 
-    color: '#1C2430',
+  checkBadge: {
+    marginTop: 2,
+  },
+  taskMeta: {
     flex: 1,
-    lineHeight: 22,
-    marginRight: 12,
   },
-  description: { 
-    fontSize: 14, 
-    color: '#5C6773',
+  taskTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
     lineHeight: 20,
   },
-  completedTime: { 
-    fontSize: 13, 
-    color: '#5C6773' 
+  description: {
+    fontSize: 13,
+    color: '#8E95A5',
+    lineHeight: 18,
+    marginTop: 4,
   },
-  emptyState: { 
-    alignItems: 'center', 
-    padding: 24, 
-    marginTop: 40 
+  cardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
   },
-  emptyTitle: { 
-    fontSize: 16, 
-    fontWeight: '500', 
-    color: '#1C2430' 
+  priorityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  priorityDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  priorityBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  completedTime: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 30,
+    marginTop: 60,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   emptyText: {
-    fontSize: 14,
-    color: '#5C6773',
+    fontSize: 13,
+    color: '#64748B',
     textAlign: 'center',
-    marginTop: 8,
+    lineHeight: 20,
   },
 });
