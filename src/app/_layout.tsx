@@ -38,14 +38,14 @@ export default function RootLayout() {
     >
       <AnimatedSplashOverlay />
       
-      <StatusBar barStyle="light-content" backgroundColor="#1F3A5F" translucent={false} />
+      <StatusBar barStyle="light-content" backgroundColor="#000" translucent={false} />
 
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: '#1F3A5F' },
+          headerStyle: { backgroundColor: '#111' },
           headerTintColor: '#FFFFFF',
           headerTitleStyle: { fontWeight: '600', fontSize: 20 },
-          contentStyle: { backgroundColor: '#F4F1EA' },
+          contentStyle: { backgroundColor: '#000' },
           headerShadowVisible: false,
         }}
       >
