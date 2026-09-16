@@ -8,9 +8,11 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme, StatusBar } from 'react-native';
 import { useEffect } from 'react';
-import notifee, { EventType } from '@notifee/react-native';
+import Constants from 'expo-constants';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+
+const isExpoGo = Constants.appOwnership === 'expo';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -18,7 +20,14 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   useEffect(() => {
-    // Handle foreground events
+    if (isExpoGo) return; // notifee not available in Expo Go
+
+    // Handle foreground events — requires native notifee module
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const notifee = require('@notifee/react-native').default as typeof import('@notifee/react-native').default;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { EventType } = require('@notifee/react-native') as typeof import('@notifee/react-native');
+
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
       const taskId = detail.notification?.data?.taskId;
       if (
