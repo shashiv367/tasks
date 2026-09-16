@@ -11,16 +11,6 @@ import { useEffect } from 'react';
 import notifee, { EventType } from '@notifee/react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import React from 'react';
-
-// Handle background events
-notifee.onBackgroundEvent(async ({ type, detail }) => {
-  if (type === EventType.PRESS && detail.notification?.data?.taskId) {
-    setTimeout(() => {
-      router.push({ pathname: '/alarm', params: { taskId: detail.notification.data.taskId as string } });
-    }, 1000); // Give app a moment to mount if launched from killed state
-  }
-});
 
 SplashScreen.preventAutoHideAsync();
 
@@ -30,8 +20,12 @@ export default function RootLayout() {
   useEffect(() => {
     // Handle foreground events
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
-      if (type === EventType.PRESS && detail.notification?.data?.taskId) {
-        router.push({ pathname: '/alarm', params: { taskId: detail.notification.data.taskId as string } });
+      const taskId = detail.notification?.data?.taskId;
+      if (
+        (type === EventType.DELIVERED || type === EventType.PRESS) &&
+        typeof taskId === 'string'
+      ) {
+        router.push({ pathname: '/alarm', params: { taskId } });
       }
     });
 
