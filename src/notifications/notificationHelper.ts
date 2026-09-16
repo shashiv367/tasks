@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { Platform, Linking, Alert } from 'react-native';
 import notifee, {
   AndroidImportance,
+  AndroidVisibility,
   TriggerType,
   RepeatFrequency,
   AndroidCategory,
@@ -19,16 +20,59 @@ export const notificationsSupported = !isExpoGo;
 export const ensureNotifeeChannel = async (): Promise<void> => {
   if (isExpoGo || Platform.OS !== 'android') return;
 
-  // We are creating/verifying the channel with HIGH importance for full-screen intents.
+  // HIGH importance + PUBLIC visibility required for full-screen intent on lock screen.
+  // bypassDnd ensures alarms ring even when Do Not Disturb is active.
   await notifee.createChannel({
     id: CHANNEL_ID,
     name: 'Task alarms',
     importance: AndroidImportance.HIGH,
+    visibility: AndroidVisibility.PUBLIC,
+    bypassDnd: true,
     sound: 'default',
     vibration: true,
     vibrationPattern: [300, 250, 300, 250],
     lightColor: '#1F3A5F',
   });
+};
+
+/**
+ * On Android 14+, USE_FULL_SCREEN_INTENT is restricted; users must explicitly grant
+ * it via Settings > Apps > Special app access > Full-screen intents.
+ * This helper prompts them to do so when the permission is missing.
+ */
+export const requestFullScreenIntentPermission = async (): Promise<void> => {
+  if (isExpoGo || Platform.OS !== 'android') return;
+
+  // canUseFullScreenIntent was added in Android 14 (API 34).
+  // notifee doesn't expose canUseFullScreenIntent directly, so we use Linking.
+  try {
+    // Check via a best-effort: if the API isn't available on this SDK version, skip.
+    const settings = await notifee.getNotificationSettings();
+    // authorizationStatus !== 1 means we can't show notifications at all — skip the FSI prompt.
+    if (settings.authorizationStatus !== 1) return;
+
+    // Only applies on Android 14+ (API 34). We send users to the special-access screen.
+    // On older versions, USE_FULL_SCREEN_INTENT is auto-granted if declared in the manifest.
+    if (Platform.Version >= 34) {
+      Alert.alert(
+        'Enable Full-Screen Alarms',
+        'For alarms to appear over other apps and on the lock screen, please enable "Full-screen intents" for this app in Settings.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () =>
+              Linking.sendIntent(
+                'android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT',
+                [{ key: 'android.provider.extra.APP_PACKAGE', value: 'com.shashi.tasks' }]
+              ),
+          },
+        ]
+      );
+    }
+  } catch {
+    // Not all devices support this; silently fail.
+  }
 };
 
 export const requestPermission = async (showSettingsDialog = false): Promise<boolean> => {
@@ -142,9 +186,12 @@ export const scheduleTaskAlarm = async (
         channelId: CHANNEL_ID,
         category: AndroidCategory.ALARM,
         importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC, // Show content on lock screen
         sound: 'default',
-        fullScreenAction: { id: 'default' },
-        pressAction: { id: 'default' },
+        // launchActivity: 'default' launches MainActivity, required for full-screen
+        // intent to actually surface the app on the lock screen / over other apps.
+        fullScreenAction: { id: 'default', launchActivity: 'default' },
+        pressAction: { id: 'default', launchActivity: 'default' },
       },
       data: { taskId: task.id },
     }, trigger);

@@ -23,6 +23,7 @@ import {
   checkPermissions,
   isExpoGo,
   notificationsSupported,
+  requestFullScreenIntentPermission,
 } from '../notifications/notificationHelper';
 
 type ViewFilter = 'today' | 'upcoming' | 'all';
@@ -43,6 +44,11 @@ export default function HomeScreen() {
       if (notificationsSupported && !isExpoGo) {
         const granted = await requestPermission(true);
         setRemindersOn(granted);
+        if (granted) {
+          // On Android 14+, prompt user to grant USE_FULL_SCREEN_INTENT so alarms
+          // can appear over other apps and on the lock screen without requiring a tap.
+          await requestFullScreenIntentPermission();
+        }
       }
     };
     void checkPermissions();
