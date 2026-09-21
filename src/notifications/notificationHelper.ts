@@ -1,8 +1,11 @@
+// src/notifications/notificationHelper.ts
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import { Platform, Linking } from 'react-native';
+import { Platform, Linking, AppState } from 'react-native';
 import type {
   TimestampTrigger,
   NotificationSettings,
+  Event,
+  EventType,
 } from '@notifee/react-native';
 
 import type { Task } from '../storage/taskStorage';
@@ -17,11 +20,9 @@ const CHANNEL_ID = 'task-alarms-v1';
 export const notificationsSupported = !isExpoGo;
 
 // Safe dynamic accessor for Notifee to prevent native crash in Expo Go
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getNotifeeModule = (): any => {
   if (isExpoGo) return null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require('@notifee/react-native');
     return {
       notifee: mod.default || mod,
@@ -30,6 +31,7 @@ const getNotifeeModule = (): any => {
       TriggerType: mod.TriggerType,
       RepeatFrequency: mod.RepeatFrequency,
       AndroidCategory: mod.AndroidCategory,
+      EventType: mod.EventType, // Add this
     };
   } catch {
     return null;
@@ -58,11 +60,6 @@ export const ensureNotifeeChannel = async (): Promise<void> => {
   }
 };
 
-/**
- * On Android 14+, USE_FULL_SCREEN_INTENT is restricted; users must explicitly grant
- * it via Settings > Apps > Special app access > Full-screen intents.
- * This helper prompts them to do so when the permission is missing.
- */
 export const requestFullScreenIntentPermission = async (): Promise<void> => {
   if (isExpoGo || Platform.OS !== 'android') return;
   const n = getNotifeeModule();
@@ -103,7 +100,7 @@ export const requestPermission = async (showSettingsDialog = false): Promise<boo
     const settings: NotificationSettings = await n.notifee.getNotificationSettings();
     let status = settings.authorizationStatus;
 
-    if (status !== 1) { // 1 = AUTHORIZED
+    if (status !== 1) {
       const requested = await n.notifee.requestPermission();
       status = requested.authorizationStatus;
     }
@@ -113,7 +110,7 @@ export const requestPermission = async (showSettingsDialog = false): Promise<boo
       return true;
     }
 
-    if (showSettingsDialog && status === 0) { // 0 = DENIED
+    if (showSettingsDialog && status === 0) {
       darkAlert(
         'Alarms are off',
         'Turn on alarms and reminders for this app in Android settings.',
@@ -224,8 +221,22 @@ export const scheduleTaskAlarm = async (
         importance: n.AndroidImportance?.HIGH ?? 4,
         visibility: n.AndroidVisibility?.PUBLIC ?? 1,
         sound: 'default',
-        fullScreenAction: { id: 'default', launchActivity: 'default' },
-        pressAction: { id: 'default', launchActivity: 'default' },
+        fullScreenAction: { 
+          id: 'default', 
+          launchActivity: 'default',
+          // This makes it open the app
+        },
+        pressAction: { 
+          id: 'default', 
+          launchActivity: 'default' 
+        },
+        // Add action buttons on the notification
+        actions: [
+          {
+            title: 'Open',
+            pressAction: { id: 'open-alarm' },
+          },
+        ],
       },
       data: { taskId: task.id },
     }, trigger);
@@ -246,5 +257,57 @@ export const cancelTaskAlarm = async (
     await n.notifee.cancelTriggerNotification(notificationId);
   } catch (error) {
     console.error('Error cancelling notifee alarm:', error);
+  }
+};
+
+// ========== NEW: Setup notification event handlers ==========
+
+/**
+ * Setup foreground and background event listeners for Notifee
+ * Call this once when the app initializes
+ */
+export const setupNotificationHandlers = (onAlarmTriggered: (taskId: string) => void) => {
+  if (isExpoGo) return () => {};
+  const n = getNotifeeModule();
+  if (!n) return () => {};
+
+  try {
+    // Foreground events (when app is open)
+    const unsubscribeForeground = n.notifee.onForegroundEvent((event: Event) => {
+      const { type, detail } = event;
+      const taskId = detail.notification?.data?.taskId as string | undefined;
+
+      if (!taskId) return;
+
+      // When notification is displayed or pressed
+      if (
+        type === n.EventType.DELIVERED ||
+        type === n.EventType.PRESS ||
+        type === n.EventType.ACTION_PRESS
+      ) {
+        onAlarmTriggered(taskId);
+      }
+    });
+
+    // Background events (when app is in background/closed)
+    n.notifee.onBackgroundEvent(async (event: Event) => {
+      const { type, detail } = event;
+      const taskId = detail.notification?.data?.taskId as string | undefined;
+
+      if (!taskId) return;
+
+      if (
+        type === n.EventType.DELIVERED ||
+        type === n.EventType.PRESS ||
+        type === n.EventType.ACTION_PRESS
+      ) {
+        onAlarmTriggered(taskId);
+      }
+    });
+
+    return unsubscribeForeground;
+  } catch (error) {
+    console.error('Error setting up notification handlers:', error);
+    return () => {};
   }
 };

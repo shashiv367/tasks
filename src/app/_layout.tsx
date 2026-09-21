@@ -40,26 +40,45 @@ export default function RootLayout() {
     if (isExpoGo) return;
 
     try {
+      // Dynamic import to prevent crash in Expo Go
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const notifee = require('@notifee/react-native').default || require('@notifee/react-native');
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { EventType } = require('@notifee/react-native');
 
-      if (!notifee?.onForegroundEvent) return;
+      if (!notifee) return;
 
+      // 1. Handle foreground events (When app is active/running)
       const unsubscribe = notifee.onForegroundEvent(({ type, detail }: any) => {
         const taskId = detail.notification?.data?.taskId;
         if (
-          (type === EventType?.DELIVERED || type === EventType?.PRESS) &&
+          (type === EventType?.DELIVERED || 
+           type === EventType?.PRESS || 
+           type === EventType?.ACTION_PRESS) &&
           typeof taskId === 'string'
         ) {
           router.push({ pathname: '/alarm', params: { taskId } });
         }
       });
 
+      // 2. Handle cold start launches (When alarm wakes up/opens a completely closed app)
+      notifee.getInitialNotification()
+        .then((initialNotification: any) => {
+          if (initialNotification) {
+            const taskId = initialNotification.notification?.data?.taskId;
+            if (typeof taskId === 'string') {
+              // Add minor delay to guarantee router has completely mounted
+              setTimeout(() => {
+                router.push({ pathname: '/alarm', params: { taskId } });
+              }, 600);
+            }
+          }
+        })
+        .catch((err: any) => console.warn('Notifee initial notification check error:', err));
+
       return unsubscribe;
     } catch (err) {
-      console.warn('Notifee foreground listener error:', err);
+      console.warn('Notifee listeners setup error:', err);
     }
   }, []);
 

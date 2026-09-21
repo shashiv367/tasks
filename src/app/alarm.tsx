@@ -1,8 +1,10 @@
+// src/app/alarm.tsx
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Vibration, Animated } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 
 import { getAllTasks, completeTask, Task } from '../storage/taskStorage';
 import { cancelTaskAlarm, scheduleTaskAlarm } from '../notifications/notificationHelper';
@@ -11,6 +13,8 @@ export default function AlarmScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
   const insets = useSafeAreaInsets();
   const [task, setTask] = useState<Task | null>(null);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const loadTask = async () => {
@@ -24,7 +28,76 @@ export default function AlarmScreen() {
     void loadTask();
   }, [taskId]);
 
+  useEffect(() => {
+    // Play alarm sound and vibrate
+    const initAlarm = async () => {
+      try {
+        // Set audio mode
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: false,
+        });
+
+        // Play default system sound (you can add custom sound file)
+        const { sound: alarmSound } = await Audio.Sound.createAsync(
+          // Use a default sound or add your own alarm.mp3 in assets
+          { uri: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3' },
+          { 
+            shouldPlay: true, 
+            isLooping: true,
+            volume: 1.0,
+          }
+        );
+        setSound(alarmSound);
+
+        // Vibrate
+        const pattern = [0, 1000, 500, 1000, 500];
+        Vibration.vibrate(pattern, true);
+
+      } catch (error) {
+        console.error('Error playing alarm sound:', error);
+      }
+    };
+
+    initAlarm();
+
+    // Pulse animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.2,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    return () => {
+      // Cleanup
+      if (sound) {
+        sound.unloadAsync();
+      }
+      Vibration.cancel();
+    };
+  }, []);
+
+  const stopAlarm = async () => {
+    if (sound) {
+      await sound.stopAsync();
+      await sound.unloadAsync();
+      setSound(null);
+    }
+    Vibration.cancel();
+  };
+
   const handleDismiss = async () => {
+    await stopAlarm();
     if (task?.notificationId) {
       await cancelTaskAlarm(task.notificationId);
     }
@@ -36,6 +109,7 @@ export default function AlarmScreen() {
   };
 
   const handleSnooze = async () => {
+    await stopAlarm();
     if (!task) return;
 
     // Snooze for 10 minutes
@@ -58,6 +132,7 @@ export default function AlarmScreen() {
   };
 
   const handleComplete = async () => {
+    await stopAlarm();
     if (!task) return;
     await completeTask(task.id);
 
@@ -89,9 +164,9 @@ export default function AlarmScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
-      <View style={styles.alarmIconContainer}>
-        <Ionicons name="alarm" size={48} color="#3B82F6" />
-      </View>
+      <Animated.View style={[styles.alarmIconContainer, { transform: [{ scale: pulseAnim }] }]}>
+        <Ionicons name="alarm" size={64} color="#3B82F6" />
+      </Animated.View>
 
       <View style={styles.content}>
         <Text style={styles.timeText}>{timeStr}</Text>
@@ -133,13 +208,13 @@ const styles = StyleSheet.create({
   },
   alarmIconContainer: {
     alignSelf: 'center',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 60,
   },
   content: {
     flex: 1,
@@ -148,14 +223,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   timeText: {
-    fontSize: 54,
+    fontSize: 64,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 16,
-    letterSpacing: -1,
+    marginBottom: 20,
+    letterSpacing: -2,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
@@ -179,9 +254,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#22C55E',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
   completeBtnText: {
     color: '#FFFFFF',
@@ -197,9 +272,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
   snoozeBtnText: {
     color: '#FFFFFF',
