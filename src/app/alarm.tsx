@@ -1,69 +1,85 @@
 // src/app/alarm.tsx
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Vibration, Animated } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  Vibration,
+  Animated,
+} from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from 'expo-audio';
 
-import { getAllTasks, completeTask, Task } from '../storage/taskStorage';
-import { cancelTaskAlarm, scheduleTaskAlarm } from '../notifications/notificationHelper';
+import { getAllTasks, completeTask, saveTask, Task } from '../storage/taskStorage';
+import { cancelTaskAlarm } from '../notifications/notificationHelper';
+
+const ALARM_SOUND_URL = 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3';
 
 export default function AlarmScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
   const insets = useSafeAreaInsets();
   const [task, setTask] = useState<Task | null>(null);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  const [isLoading, setIsLoading] = useState(true);
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    let isMounted = true;
     const loadTask = async () => {
-      if (!taskId) return;
-      const tasks = await getAllTasks();
-      const found = tasks.find(t => t.id === taskId);
-      if (found) {
-        setTask(found);
+      try {
+        if (!taskId) {
+          if (isMounted) setIsLoading(false);
+          return;
+        }
+        const tasks = await getAllTasks();
+        const found = tasks.find(t => t.id === taskId);
+        if (isMounted) {
+          if (found) setTask(found);
+          setIsLoading(false);
+        }
+      } catch (e) {
+        if (isMounted) setIsLoading(false);
       }
     };
     void loadTask();
+    return () => {
+      isMounted = false;
+    };
   }, [taskId]);
 
   useEffect(() => {
-    // Play alarm sound and vibrate
+    let player: AudioPlayer | null = null;
+
     const initAlarm = async () => {
       try {
-        // Set audio mode
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false,
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          interruptionMode: 'doNotMix',
+          shouldPlayInBackground: true,
         });
 
-        // Play default system sound (you can add custom sound file)
-        const { sound: alarmSound } = await Audio.Sound.createAsync(
-          // Use a default sound or add your own alarm.mp3 in assets
-          { uri: 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3' },
-          { 
-            shouldPlay: true, 
-            isLooping: true,
-            volume: 1.0,
-          }
-        );
-        setSound(alarmSound);
-
-        // Vibrate
-        const pattern = [0, 1000, 500, 1000, 500];
-        Vibration.vibrate(pattern, true);
-
+        player = createAudioPlayer(ALARM_SOUND_URL);
+        player.loop = true;
+        player.volume = 1.0;
+        player.play();
+        playerRef.current = player;
       } catch (error) {
-        console.error('Error playing alarm sound:', error);
+        console.warn('Alarm audio playback notice:', error);
       }
     };
 
-    initAlarm();
+    void initAlarm();
+
+    // Vibrate pattern
+    const pattern = [0, 1000, 500, 1000, 500];
+    Vibration.vibrate(pattern, true);
 
     // Pulse animation
-    Animated.loop(
+    const pulseAnimation = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.2,
@@ -76,28 +92,35 @@ export default function AlarmScreen() {
           useNativeDriver: true,
         }),
       ])
-    ).start();
+    );
+    pulseAnimation.start();
 
     return () => {
-      // Cleanup
-      if (sound) {
-        sound.unloadAsync();
+      pulseAnimation.stop();
+      if (playerRef.current) {
+        try {
+          playerRef.current.pause();
+          playerRef.current.remove();
+        } catch {}
+        playerRef.current = null;
       }
       Vibration.cancel();
     };
-  }, []);
+  }, [pulseAnim]);
 
-  const stopAlarm = async () => {
-    if (sound) {
-      await sound.stopAsync();
-      await sound.unloadAsync();
-      setSound(null);
+  const stopAlarm = () => {
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause();
+        playerRef.current.remove();
+      } catch {}
+      playerRef.current = null;
     }
     Vibration.cancel();
   };
 
   const handleDismiss = async () => {
-    await stopAlarm();
+    stopAlarm();
     if (task?.notificationId) {
       await cancelTaskAlarm(task.notificationId);
     }
@@ -109,20 +132,20 @@ export default function AlarmScreen() {
   };
 
   const handleSnooze = async () => {
-    await stopAlarm();
-    if (!task) return;
+    stopAlarm();
+    if (task) {
+      // Snooze for 10 minutes
+      const snoozeDate = new Date();
+      snoozeDate.setMinutes(snoozeDate.getMinutes() + 10);
 
-    // Snooze for 10 minutes
-    const snoozeDate = new Date();
-    snoozeDate.setMinutes(snoozeDate.getMinutes() + 10);
+      const snoozedTask: Task = {
+        ...task,
+        repeatType: 'once',
+        reminderTime: snoozeDate.toISOString(),
+      };
 
-    const snoozedTask: Task = {
-      ...task,
-      repeatType: 'once',
-      reminderTime: snoozeDate.toISOString(),
-    };
-
-    await scheduleTaskAlarm(snoozedTask);
+      await saveTask(snoozedTask);
+    }
 
     if (router.canGoBack()) {
       router.back();
@@ -132,9 +155,10 @@ export default function AlarmScreen() {
   };
 
   const handleComplete = async () => {
-    await stopAlarm();
-    if (!task) return;
-    await completeTask(task.id);
+    stopAlarm();
+    if (task) {
+      await completeTask(task.id);
+    }
 
     if (router.canGoBack()) {
       router.back();
@@ -143,7 +167,7 @@ export default function AlarmScreen() {
     }
   };
 
-  if (!task) {
+  if (isLoading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
@@ -155,39 +179,72 @@ export default function AlarmScreen() {
     );
   }
 
-  const timeStr = new Date(task.reminderTime).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const timeStr = task
+    ? new Date(task.reminderTime).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
+    <View
+      style={[
+        styles.container,
+        { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 },
+      ]}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
-      <Animated.View style={[styles.alarmIconContainer, { transform: [{ scale: pulseAnim }] }]}>
+      <Animated.View
+        style={[styles.alarmIconContainer, { transform: [{ scale: pulseAnim }] }]}
+      >
         <Ionicons name="alarm" size={64} color="#3B82F6" />
       </Animated.View>
 
       <View style={styles.content}>
         <Text style={styles.timeText}>{timeStr}</Text>
-        <Text style={styles.title}>{task.title}</Text>
-        {task.description ? (
+        <Text style={styles.title}>{task ? task.title : 'Task Reminder'}</Text>
+        {task?.description ? (
           <Text style={styles.description}>{task.description}</Text>
         ) : null}
       </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} activeOpacity={0.85}>
-          <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={styles.completeBtnText}>Mark Done</Text>
-        </TouchableOpacity>
+        {task && (
+          <TouchableOpacity
+            style={styles.completeBtn}
+            onPress={handleComplete}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name="checkmark-circle"
+              size={22}
+              color="#FFFFFF"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.completeBtnText}>Mark Done</Text>
+          </TouchableOpacity>
+        )}
 
-        <TouchableOpacity style={styles.snoozeBtn} onPress={handleSnooze} activeOpacity={0.85}>
-          <Ionicons name="time" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={styles.snoozeBtnText}>Snooze (10m)</Text>
-        </TouchableOpacity>
+        {task && (
+          <TouchableOpacity
+            style={styles.snoozeBtn}
+            onPress={handleSnooze}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="time" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.snoozeBtnText}>Snooze (10m)</Text>
+          </TouchableOpacity>
+        )}
 
-        <TouchableOpacity style={styles.outlineBtn} onPress={handleDismiss} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.outlineBtn}
+          onPress={handleDismiss}
+          activeOpacity={0.85}
+        >
           <Text style={styles.outlineBtnText}>Dismiss</Text>
         </TouchableOpacity>
       </View>

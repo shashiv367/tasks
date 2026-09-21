@@ -22,7 +22,9 @@ if (!isExpoGo) {
           typeof taskId === 'string'
         ) {
           setTimeout(() => {
-            router.push({ pathname: '/alarm', params: { taskId } });
+            try {
+              router.push({ pathname: '/alarm', params: { taskId } });
+            } catch {}
           }, 1000);
         }
       });
