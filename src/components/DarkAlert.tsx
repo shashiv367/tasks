@@ -18,27 +18,47 @@ export interface AlertConfig {
   title: string;
   message?: string;
   buttons?: AlertButton[];
+  // Optional: Add icon or type for visual flair
+  type?: 'default' | 'success' | 'warning' | 'error';
 }
 
 interface AlertState extends AlertConfig {
   visible: boolean;
 }
 
-type Listener = (state: AlertState) => void;
-let globalListener: Listener | null = null;
+// Queue system to prevent alerts from overwriting each other
+let alertQueue: AlertConfig[] = [];
+let globalListener: ((state: AlertState) => void) | null = null;
+
+const processQueue = () => {
+  if (alertQueue.length > 0 && globalListener) {
+    const nextAlert = alertQueue.shift();
+    if (nextAlert) {
+      globalListener({
+        visible: true,
+        ...nextAlert,
+        buttons: nextAlert.buttons && nextAlert.buttons.length > 0 
+          ? nextAlert.buttons 
+          : [{ text: 'OK', style: 'default' }],
+      });
+    }
+  }
+};
 
 export const darkAlert = (
   title: string,
   message?: string,
-  buttons?: AlertButton[]
+  buttons?: AlertButton[],
+  type?: 'default' | 'success' | 'warning' | 'error'
 ) => {
+  const newAlert: AlertConfig = { title, message, buttons, type };
+  
   if (globalListener) {
-    globalListener({
-      visible: true,
-      title,
-      message,
-      buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'OK', style: 'default' }],
-    });
+    // If an alert is already active, push to queue. Otherwise show immediately.
+    alertQueue.push(newAlert);
+    if (alertQueue.length === 1) {
+      processQueue();
+    }
   }
 };
 
@@ -48,10 +68,13 @@ export const DarkAlertHost: React.FC = () => {
     title: '',
     message: '',
     buttons: [],
+    type: 'default',
   });
 
   useEffect(() => {
-    globalListener = setState;
+    globalListener = (newState) => {
+      setState(newState);
+    };
     return () => {
       globalListener = null;
     };
@@ -59,9 +82,16 @@ export const DarkAlertHost: React.FC = () => {
 
   const closeAlert = (callback?: () => void) => {
     setState(prev => ({ ...prev, visible: false }));
+    
+    // Execute button callback after modal hides smoothly
     if (callback) {
       setTimeout(callback, 100);
     }
+
+    // Process next item in queue after a brief delay
+    setTimeout(() => {
+      processQueue();
+    }, 250);
   };
 
   if (!state.visible) return null;
@@ -73,10 +103,21 @@ export const DarkAlertHost: React.FC = () => {
       animationType="fade"
       onRequestClose={() => closeAlert()}
     >
-      <Pressable style={styles.overlay} onPress={() => closeAlert()}>
+      <Pressable 
+        style={styles.overlay} 
+        onPress={() => {
+          // Optional: dismiss on backdrop press if cancel button exists, 
+          // or leave it disabled for strict confirmation alerts.
+        }}
+      >
         <Pressable style={styles.dialog} onPress={e => e.stopPropagation()}>
-          <Text style={styles.title}>{state.title}</Text>
-          {state.message ? <Text style={styles.message}>{state.message}</Text> : null}
+          <Text style={styles.title} accessibilityRole="header">
+            {state.title}
+          </Text>
+          
+          {state.message ? (
+            <Text style={styles.message}>{state.message}</Text>
+          ) : null}
 
           {(() => {
             const buttonsList = state.buttons && state.buttons.length > 0
@@ -97,6 +138,8 @@ export const DarkAlertHost: React.FC = () => {
                   return (
                     <TouchableOpacity
                       key={index}
+                      accessibilityRole="button"
+                      accessibilityLabel={btn.text}
                       style={[
                         styles.button,
                         isCancel && styles.cancelButton,
