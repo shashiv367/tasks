@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
 export type ActiveTab = 'tasks' | 'notes' | 'history' | 'settings';
 
@@ -18,36 +19,45 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab }) => {
     label: string;
     icon: keyof typeof Ionicons.glyphMap;
     iconActive: keyof typeof Ionicons.glyphMap;
-    onPress: () => void;
+    route: string;
   }[] = [
     {
       id: 'tasks',
       label: 'Tasks',
       icon: 'home-outline',
       iconActive: 'home',
-      onPress: () => {
-        if (activeTab !== 'tasks') router.replace('/');
-      },
+      route: '/',
     },
     {
       id: 'notes',
       label: 'Notes',
       icon: 'document-text-outline',
       iconActive: 'document-text',
-      onPress: () => {
-        if (activeTab !== 'notes') router.replace('/notes');
-      },
+      route: '/notes',
     },
     {
       id: 'history',
       label: 'History',
       icon: 'time-outline',
       iconActive: 'time',
-      onPress: () => {
-        if (activeTab !== 'history') router.replace('/history');
-      },
+      route: '/history',
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: 'settings-outline',
+      iconActive: 'settings',
+      route: '/settings',
     },
   ];
+
+  const handleTabPress = (id: ActiveTab, route: string) => {
+    if (activeTab !== id) {
+      // Provide subtle haptic feedback on tab change
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.replace(route as any);
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -58,7 +68,10 @@ export const BottomTabBar: React.FC<BottomTabBarProps> = ({ activeTab }) => {
             key={tab.id}
             style={styles.tabItem}
             activeOpacity={0.7}
-            onPress={tab.onPress}
+            onPress={() => handleTabPress(tab.id, tab.route)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
+            accessibilityLabel={`${tab.label} tab`}
           >
             <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
               <Ionicons
